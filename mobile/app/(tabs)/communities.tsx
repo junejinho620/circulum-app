@@ -484,6 +484,9 @@ export default function ExploreScreen() {
           <SectionHeader title="Tools & Modules" icon="apps-outline" iconColor={T.accentPurple} />
           <ModulesGrid onModulePress={(id) => {
             if (id === 'timetable') router.push('/timetable' as any);
+            if (id === 'catalog') router.push('/courses' as any);
+            if (id === 'professors') router.push('/professors' as any);
+            if (id === 'study-buddy') router.push('/study-buddy' as any);
           }} />
 
           {/* Suggested actions */}

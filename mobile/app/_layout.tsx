@@ -47,6 +47,11 @@ export default function RootLayout() {
             <Stack.Screen name="community/[id]" options={{ presentation: 'card' }} />
             <Stack.Screen name="conversation/[id]" options={{ presentation: 'card' }} />
             <Stack.Screen name="timetable" options={{ presentation: 'card' }} />
+            <Stack.Screen name="courses" options={{ presentation: 'card' }} />
+            <Stack.Screen name="course/[id]" options={{ presentation: 'card' }} />
+            <Stack.Screen name="professors" options={{ presentation: 'card' }} />
+            <Stack.Screen name="professor/[id]" options={{ presentation: 'card' }} />
+            <Stack.Screen name="study-buddy" options={{ presentation: 'card' }} />
           </Stack>
         </QueryClientProvider>
       </SafeAreaProvider>
