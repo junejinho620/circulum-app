@@ -1,13 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Pressable, Animated, PanResponder,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, Animated, Dimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const { width: SCREEN_W } = Dimensions.get('window');
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const T = {
@@ -22,72 +22,223 @@ const T = {
 
 const BG:  [string, string, string] = ['#F4CBD9', '#E9E1F6', '#D7E6FF'];
 const CTA: [string, string, string] = ['#4B50F8', '#8B4DFF', '#E655C5'];
+const PUB: [string, string, string] = ['#3DAB73', '#2BC77A', '#1EB589'];
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
-type BrowseModule = {
+// ─── Avatar gradient palette ──────────────────────────────────────────────────
+const AVATAR_GRADS: [string, string][] = [
+  ['#4B50F8', '#8B4DFF'], ['#8B4DFF', '#E655C5'], ['#6B7CFF', '#4B50F8'],
+  ['#E655C5', '#C47EFF'], ['#C47EFF', '#6B7CFF'], ['#3DAB73', '#4D97FF'],
+  ['#F1973B', '#E655C5'], ['#4D97FF', '#8B4DFF'],
+];
+
+function avatarGrad(handle: string): [string, string] {
+  let h = 0;
+  for (let i = 0; i < handle.length; i++) h = ((h << 5) - h + handle.charCodeAt(i)) | 0;
+  return AVATAR_GRADS[Math.abs(h) % AVATAR_GRADS.length];
+}
+
+// ─── Filter chips ─────────────────────────────────────────────────────────────
+const FILTERS = ['For You', 'Following', 'Trending', 'Classes', 'Events', 'Confessions'];
+
+// ─── Mock feed data ───────────────────────────────────────────────────────────
+type FeedItem = {
   id: string;
-  label: string;
-  icon: string;
-  color: string;
+  type: 'post' | 'poll' | 'event' | 'milestone';
+  author: string;
+  handle: string;
+  isAnonymous: boolean;
+  board: string;
+  boardColor: string;
+  community?: string;
+  text: string;
+  time: string;
+  upvotes: number;
+  comments: number;
+  // poll-specific
+  pollOptions?: { label: string; votes: number }[];
+  // event-specific
+  eventDate?: string;
+  eventLocation?: string;
+  eventAttendees?: number;
+  // milestone
+  milestoneIcon?: string;
+  milestoneColor?: string;
 };
 
-const BROWSE_MODULES: BrowseModule[] = [
-  { id: 'timetable', label: 'Timetable Builder', icon: 'calendar-outline', color: '#4B50F8' },
-  { id: 'catalog', label: 'Course Catalog', icon: 'library-outline', color: '#6B7CFF' },
-  { id: 'professors', label: 'Professor Reviews', icon: 'school-outline', color: '#8B4DFF' },
-  { id: 'map', label: 'Campus Map', icon: 'map-outline', color: '#3DAB73' },
-  { id: 'study-buddy', label: 'Study Buddy Match', icon: 'people-outline', color: '#C47EFF' },
-  { id: 'international', label: 'International Community', icon: 'globe-outline', color: '#4D97FF' },
-  { id: 'polls', label: 'Polls', icon: 'stats-chart-outline', color: '#F1973B' },
-  { id: 'confession', label: 'Confession Board', icon: 'chatbox-ellipses-outline', color: '#E655C5' },
-  { id: 'ai-assistant', label: 'AI Academic Assistant', icon: 'sparkles-outline', color: '#7A64FF' },
+const FEED_DATA: FeedItem[] = [
+  {
+    id: '1', type: 'post', author: 'Anonymous', handle: 'anon', isAnonymous: true,
+    board: 'Confessions', boardColor: '#E655C5',
+    text: 'I accidentally submitted the wrong file for my final project and the prof gave me a 92 anyway. I still haven\'t told anyone.',
+    time: '8m', upvotes: 217, comments: 43,
+  },
+  {
+    id: '2', type: 'poll', author: 'Sarah K.', handle: 'sarahk', isAnonymous: false,
+    board: 'Classes', boardColor: '#4B50F8', community: 'MAT237',
+    text: 'How did everyone feel about the midterm?',
+    time: '15m', upvotes: 89, comments: 34,
+    pollOptions: [
+      { label: 'Easy — I\'m fine', votes: 12 },
+      { label: 'Fair but tricky', votes: 48 },
+      { label: 'Absolutely brutal', votes: 67 },
+      { label: 'I blacked out', votes: 31 },
+    ],
+  },
+  {
+    id: '3', type: 'event', author: 'Hart House', handle: 'harthouse', isAnonymous: false,
+    board: 'Events', boardColor: '#8B4DFF',
+    text: 'Study Week Pop-Up: Free Coffee & Donuts',
+    time: '22m', upvotes: 134, comments: 18,
+    eventDate: 'Today, 11:00 AM – 2:00 PM',
+    eventLocation: 'Hart House Great Hall',
+    eventAttendees: 86,
+  },
+  {
+    id: '4', type: 'post', author: 'Mike T.', handle: 'miket', isAnonymous: false,
+    board: 'Housing', boardColor: '#6B7CFF',
+    text: 'Subletting my 1BR near campus this summer. Fully furnished, $1200/mo, 5 min walk to Robarts. DM if interested.',
+    time: '38m', upvotes: 24, comments: 11,
+  },
+  {
+    id: '5', type: 'milestone', author: '', handle: '', isAnonymous: false,
+    board: 'Campus', boardColor: '#3DAB73',
+    text: 'CSC263 community just hit 500 members!',
+    time: '1h', upvotes: 45, comments: 8,
+    milestoneIcon: 'trophy-outline', milestoneColor: '#F1973B',
+  },
+  {
+    id: '6', type: 'post', author: 'Anonymous', handle: 'anon2', isAnonymous: true,
+    board: 'Confessions', boardColor: '#E655C5',
+    text: 'The person who sits behind me in PSY100 always smells like fresh cookies and it\'s genuinely the highlight of my Mondays.',
+    time: '1h', upvotes: 312, comments: 67,
+  },
+  {
+    id: '7', type: 'post', author: 'Chris L.', handle: 'chrisl', isAnonymous: false,
+    board: 'Classes', boardColor: '#4B50F8', community: 'CSC108',
+    text: 'Pro tip: Professor Diane\'s office hours are WAY less crowded on Thursdays. Got my entire assignment reviewed in 10 mins.',
+    time: '2h', upvotes: 78, comments: 15,
+  },
+  {
+    id: '8', type: 'poll', author: 'Campus Life', handle: 'campuslife', isAnonymous: false,
+    board: 'Social', boardColor: '#3DAB73',
+    text: 'Best study spot on campus?',
+    time: '2h', upvotes: 156, comments: 42,
+    pollOptions: [
+      { label: 'Robarts Library', votes: 89 },
+      { label: 'Gerstein', votes: 45 },
+      { label: 'Bahen Centre', votes: 34 },
+      { label: 'A random bench outside', votes: 62 },
+    ],
+  },
+  {
+    id: '9', type: 'event', author: 'CS Student Union', handle: 'cssu', isAnonymous: false,
+    board: 'Events', boardColor: '#8B4DFF',
+    text: 'Hackathon Info Session — Build your team!',
+    time: '3h', upvotes: 67, comments: 23,
+    eventDate: 'Tomorrow, 6:00 PM',
+    eventLocation: 'Bahen Centre BA1190',
+    eventAttendees: 42,
+  },
+  {
+    id: '10', type: 'post', author: 'Jessica W.', handle: 'jessicaw', isAnonymous: false,
+    board: 'Marketplace', boardColor: '#F1973B',
+    text: 'Selling Stewart Calculus 9th Ed — $40. Barely used (I wish I could say the same about the knowledge). Pick up at Robarts.',
+    time: '3h', upvotes: 33, comments: 7,
+  },
 ];
 
-const DEFAULT_PINNED_BROWSE_IDS = ['timetable', 'catalog', 'professors', 'map', 'ai-assistant'];
-const BROWSE_PINNED_STORAGE_KEY = 'home_browse_pinned_v1';
-const MAX_BROWSE_SLOTS = 5;
-
-const BOARDS = [
-  { id: '1', name: 'Free Board',   latest: 'Did anyone lose a red wallet near Sid Smith?',      unread: 3 },
-  { id: '2', name: 'Classes',      latest: 'Does anyone have CHM242 notes from today?',          unread: 12 },
-  { id: '3', name: 'Housing',      latest: 'Subletting my apartment near campus this summer',    unread: 0 },
-  { id: '4', name: 'Events',       latest: 'Hart House mixer tonight — who\'s going?',           unread: 5 },
-  { id: '5', name: 'Marketplace',  latest: 'Stewart Calculus 9th Ed — $40',                     unread: 0 },
-  { id: '6', name: 'Social',       latest: 'Looking for people to play badminton this week',    unread: 1 },
+// ─── Presence strip ──────────────────────────────────────────────────────────
+const ACTIVE_USERS = [
+  'Sarah K.', 'Mike T.', 'Chris L.', 'Anonymous', 'Jessica W.',
+  'Alex R.', 'Jordan P.', 'Anonymous', 'Sam H.', 'Taylor N.',
+  'Anonymous', 'Casey M.',
 ];
+
+function PresenceStrip() {
+  return (
+    <View style={ps.wrap}>
+      <View style={ps.avatarStack}>
+        {ACTIVE_USERS.slice(0, 6).map((name, i) => (
+          <View key={i} style={[ps.avatarRing, { marginLeft: i === 0 ? 0 : -10, zIndex: 6 - i }]}>
+            <LinearGradient
+              colors={avatarGrad(name)}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={ps.avatar}
+            >
+              {name === 'Anonymous' ? (
+                <Ionicons name="eye-off" size={10} color="rgba(255,255,255,0.9)" />
+              ) : (
+                <Text style={ps.avatarText}>{name[0]}</Text>
+              )}
+            </LinearGradient>
+          </View>
+        ))}
+      </View>
+      <View style={ps.pulseWrap}>
+        <View style={ps.pulseDot} />
+        <Text style={ps.pulseText}>
+          <Text style={{ fontWeight: '700', color: T.textPrimary }}>512</Text> active now
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+const ps = StyleSheet.create({
+  wrap: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 22, paddingVertical: 6,
+  },
+  avatarStack: { flexDirection: 'row', alignItems: 'center' },
+  avatarRing: {
+    borderRadius: 14, borderWidth: 2, borderColor: 'rgba(233,225,246,0.95)',
+  },
+  avatar: {
+    width: 24, height: 24, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  avatarText: { fontSize: 10, fontWeight: '800', color: '#fff' },
+  pulseWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  pulseDot: {
+    width: 7, height: 7, borderRadius: 4,
+    backgroundColor: '#3DAB73',
+    shadowColor: '#3DAB73', shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5, shadowRadius: 4,
+  },
+  pulseText: { fontSize: 12, color: T.textMuted },
+});
 
 // ─── Header ───────────────────────────────────────────────────────────────────
 function Header({ onBell }: { onBell: () => void }) {
   return (
     <View style={hdr.row}>
       <View style={hdr.left}>
-        <SplashEmblem />
+        <EmblemMark />
         <View>
           <Text style={hdr.campus}>University of Toronto</Text>
           <Text style={hdr.subtitle}>St. George Campus</Text>
         </View>
       </View>
       <TouchableOpacity onPress={onBell} activeOpacity={0.8} style={hdr.bellWrap}>
-        <BlurView intensity={40} tint="light" style={hdr.bell}>
+        <View style={hdr.bell}>
           <Ionicons name="notifications-outline" size={20} color={T.textSecondary} />
           <View style={hdr.badge} />
-        </BlurView>
+        </View>
       </TouchableOpacity>
     </View>
   );
 }
 
-// Exact proportional scale of the splash EmblemMark (112→44px, ratio 0.393)
-function SplashEmblem() {
+function EmblemMark() {
   return (
     <View style={emb.shadow}>
-      <BlurView intensity={70} tint="light" style={emb.glass}>
+      <View style={emb.glass}>
         <View style={emb.ringOuter} />
         <View style={emb.circleBlue} />
         <View style={emb.circlePurple} />
         <View style={emb.circlePink} />
         <View style={emb.dot} />
-      </BlurView>
+      </View>
     </View>
   );
 }
@@ -100,6 +251,7 @@ const emb = StyleSheet.create({
   glass: {
     width: 44, height: 44, borderRadius: 13, overflow: 'hidden',
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.52)',
+    backgroundColor: 'rgba(255,255,255,0.62)',
     alignItems: 'center', justifyContent: 'center',
   },
   ringOuter: {
@@ -127,12 +279,12 @@ const emb = StyleSheet.create({
 const hdr = StyleSheet.create({
   row: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 22, paddingTop: 10, paddingBottom: 18,
+    paddingHorizontal: 22, paddingTop: 10, paddingBottom: 8,
   },
-  left:       { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  campus:  { fontSize: 15, fontWeight: '800', color: T.textPrimary, letterSpacing: -0.3 },
-  subtitle:{ fontSize: 11, color: T.textMuted, marginTop: 1 },
-  bellWrap:{
+  left:     { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  campus:   { fontSize: 15, fontWeight: '800', color: T.textPrimary, letterSpacing: -0.3 },
+  subtitle: { fontSize: 11, color: T.textMuted, marginTop: 1 },
+  bellWrap: {
     borderRadius: 13, overflow: 'hidden',
     shadowColor: '#5B608C', shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.08, shadowRadius: 8, elevation: 3,
@@ -141,6 +293,7 @@ const hdr = StyleSheet.create({
     width: 40, height: 40, borderRadius: 13,
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.55)',
+    backgroundColor: 'rgba(255,255,255,0.62)',
   },
   badge: {
     position: 'absolute', top: 9, right: 9,
@@ -150,387 +303,370 @@ const hdr = StyleSheet.create({
   },
 });
 
-// ─── Hero card ────────────────────────────────────────────────────────────────
-function HeroCard({ onPress }: { onPress: () => void }) {
+// ─── Filter chips ─────────────────────────────────────────────────────────────
+function FilterChips({ active, onSelect }: { active: string; onSelect: (f: string) => void }) {
   return (
-    <View style={hero.shadow}>
+    <FlatList
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      data={FILTERS}
+      keyExtractor={(item) => item}
+      contentContainerStyle={fc.row}
+      renderItem={({ item }) => {
+        const isActive = item === active;
+        return (
+          <TouchableOpacity onPress={() => onSelect(item)} activeOpacity={0.75}>
+            {isActive ? (
+              <LinearGradient
+                colors={CTA} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                style={fc.chipActive}
+              >
+                <Text style={fc.chipActiveText}>{item}</Text>
+              </LinearGradient>
+            ) : (
+              <View style={fc.chipInactive}>
+                <Text style={fc.chipInactiveText}>{item}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        );
+      }}
+    />
+  );
+}
+
+const fc = StyleSheet.create({
+  row: { paddingHorizontal: 22, gap: 8, paddingVertical: 4 },
+  chipActive: {
+    height: 34, paddingHorizontal: 18,
+    borderRadius: 99,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  chipActiveText: { fontSize: 13, fontWeight: '700', color: T.white },
+  chipInactive: {
+    height: 34, paddingHorizontal: 18,
+    borderRadius: 99,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.55)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)',
+  },
+  chipInactiveText: { fontSize: 13, fontWeight: '600', color: T.textSecondary },
+});
+
+// ─── Feed card components ─────────────────────────────────────────────────────
+
+function PostCard({ item, onPress }: { item: FeedItem; onPress: () => void }) {
+  const ag = avatarGrad(item.handle);
+  return (
+    <View style={fd.shadow}>
       <TouchableOpacity onPress={onPress} activeOpacity={0.88}>
-        <BlurView intensity={55} tint="light" style={hero.card}>
-          <LinearGradient
-            colors={['rgba(75,80,248,0.06)', 'rgba(139,77,255,0.03)', 'rgba(255,255,255,0)']}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-          <View style={hero.topRow}>
-            <LinearGradient colors={CTA} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={hero.dot} />
-            <Text style={hero.live}>LIVE NOW</Text>
-            <Text style={hero.timeText}>Updated just now</Text>
-          </View>
-          <Text style={hero.headline}>
-            <Text style={hero.count}>24</Text>
-            {' '}discussions trending on campus
-          </Text>
-          <View style={hero.metaRow}>
-            <View style={hero.metaItem}>
-              <Ionicons name="people-outline" size={13} color={T.accentPurple} />
-              <Text style={hero.metaText}>
-                <Text style={{ fontWeight: '700', color: T.textPrimary }}>512</Text> active now
-              </Text>
+        <View style={fd.card}>
+          {/* Author row */}
+          <View style={fd.authorRow}>
+            <LinearGradient colors={ag} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={fd.avatar}>
+              {item.isAnonymous ? (
+                <Ionicons name="eye-off" size={14} color="rgba(255,255,255,0.9)" />
+              ) : (
+                <Text style={fd.avatarLetter}>{item.author[0]}</Text>
+              )}
+            </LinearGradient>
+            <View style={{ flex: 1 }}>
+              <Text style={fd.authorName}>{item.author}</Text>
+              <View style={fd.authorMeta}>
+                <View style={[fd.boardPill, { backgroundColor: item.boardColor + '10', borderColor: item.boardColor + '20' }]}>
+                  <Text style={[fd.boardPillText, { color: item.boardColor }]}>{item.board}</Text>
+                </View>
+                {item.community && (
+                  <Text style={fd.communityText}>in {item.community}</Text>
+                )}
+              </View>
             </View>
-            <View style={hero.metaDot} />
-            <View style={hero.metaItem}>
-              <Ionicons name="chatbubble-outline" size={13} color={T.accentBlue} />
-              <Text style={hero.metaText}>
-                <Text style={{ fontWeight: '700', color: T.textPrimary }}>143</Text> new replies
-              </Text>
-            </View>
+            <Text style={fd.time}>{item.time}</Text>
           </View>
-        </BlurView>
+
+          {/* Body */}
+          <Text style={fd.body}>{item.text}</Text>
+
+          {/* Actions */}
+          <View style={fd.actionsRow}>
+            <TouchableOpacity style={fd.actionBtn} activeOpacity={0.7}>
+              <Ionicons name="arrow-up-outline" size={16} color={T.accentBlue} />
+              <Text style={[fd.actionText, { color: T.accentBlue }]}>{item.upvotes}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={fd.actionBtn} activeOpacity={0.7}>
+              <Ionicons name="chatbubble-outline" size={14} color={T.textMuted} />
+              <Text style={fd.actionText}>{item.comments}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={fd.actionBtn} activeOpacity={0.7}>
+              <Ionicons name="share-outline" size={15} color={T.textMuted} />
+            </TouchableOpacity>
+            <View style={{ flex: 1 }} />
+            <TouchableOpacity style={fd.actionBtn} activeOpacity={0.7}>
+              <Ionicons name="bookmark-outline" size={15} color={T.textMuted} />
+            </TouchableOpacity>
+          </View>
+        </View>
       </TouchableOpacity>
     </View>
   );
 }
 
-const hero = StyleSheet.create({
-  shadow: {
-    marginHorizontal: 22, borderRadius: 24,
-    shadowColor: '#8B4DFF', shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.13, shadowRadius: 26, elevation: 9,
-  },
-  card: {
-    borderRadius: 24, overflow: 'hidden',
-    borderWidth: 1.5, borderColor: 'rgba(139,77,255,0.16)',
-    padding: 20, gap: 12,
-  },
-  topRow:   { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  dot:      { width: 8, height: 8, borderRadius: 4 },
-  live:     { fontSize: 11, fontWeight: '800', color: T.accentPurple, letterSpacing: 0.5 },
-  timeText: { fontSize: 11, color: T.textMuted, marginLeft: 'auto' as any },
-  headline: { fontSize: 16, fontWeight: '700', color: T.textPrimary, lineHeight: 22 },
-  count:    { color: T.accentBlue },
-  metaRow:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  metaText: { fontSize: 12, color: T.textSecondary },
-  metaDot:  { width: 3, height: 3, borderRadius: 2, backgroundColor: 'rgba(17,17,17,0.15)' },
-});
-
-// ─── Shortcuts grid ───────────────────────────────────────────────────────────
-function normalizePinnedBrowseIds(ids?: string[]) {
-  const validUnique = (ids ?? []).filter((id, i, arr) => {
-    const isValid = BROWSE_MODULES.some((m) => m.id === id);
-    return isValid && arr.indexOf(id) === i;
-  });
-  return validUnique.slice(0, MAX_BROWSE_SLOTS);
-}
-
-function getBrowseModule(moduleId: string) {
-  return BROWSE_MODULES.find((module) => module.id === moduleId) ?? BROWSE_MODULES[0];
-}
-
-function BrowseGrid({
-  pinnedIds,
-  onModulePress,
-  onMorePress,
-}: {
-  pinnedIds: string[];
-  onModulePress: (moduleId: string) => void;
-  onMorePress: () => void;
-}) {
-  const pinnedModules = normalizePinnedBrowseIds(pinnedIds).map((id) => getBrowseModule(id));
-  const cards = [...pinnedModules, ...Array.from({ length: MAX_BROWSE_SLOTS - pinnedModules.length }, () => null)];
-
-  cards.push({ id: 'more', label: 'More', icon: 'ellipsis-horizontal-circle-outline', color: T.accentPurple } as BrowseModule);
+function PollCard({ item, onPress }: { item: FeedItem; onPress: () => void }) {
+  const ag = avatarGrad(item.handle);
+  const totalVotes = item.pollOptions?.reduce((sum, o) => sum + o.votes, 0) ?? 1;
 
   return (
-    <View style={sc.grid}>
-      {cards.map((s, index) => (
-        <TouchableOpacity
-          key={s?.id ?? `empty-${index}`}
-          onPress={() => {
-            if (!s) return;
-            if (s.id === 'more') onMorePress();
-            else onModulePress(s.id);
-          }}
-          activeOpacity={0.78}
-          style={sc.itemWrap}
-        >
-          <View style={[sc.item, !s && sc.itemEmpty]}>
-            {s ? (
-              <>
-                <View style={[sc.iconCircle, { backgroundColor: s.color + '14' }]}>
-                  <Ionicons name={s.icon as any} size={20} color={s.color} />
+    <View style={fd.shadow}>
+      <TouchableOpacity onPress={onPress} activeOpacity={0.88}>
+        <View style={fd.card}>
+          {/* Author row */}
+          <View style={fd.authorRow}>
+            <LinearGradient colors={ag} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={fd.avatar}>
+              <Text style={fd.avatarLetter}>{item.author[0]}</Text>
+            </LinearGradient>
+            <View style={{ flex: 1 }}>
+              <Text style={fd.authorName}>{item.author}</Text>
+              <View style={fd.authorMeta}>
+                <View style={[fd.boardPill, { backgroundColor: item.boardColor + '10', borderColor: item.boardColor + '20' }]}>
+                  <Text style={[fd.boardPillText, { color: item.boardColor }]}>{item.board}</Text>
                 </View>
-                <Text style={sc.label} numberOfLines={2}>{s.label}</Text>
-              </>
-            ) : (
-              <>
-                <View style={sc.emptyCircle}>
-                  <Ionicons name="add" size={20} color={T.textMuted} />
+                {item.community && <Text style={fd.communityText}>in {item.community}</Text>}
+                <View style={pl.pollBadge}>
+                  <Ionicons name="stats-chart-outline" size={10} color={T.accentPurple} />
+                  <Text style={pl.pollBadgeText}>Poll</Text>
                 </View>
-                <Text style={[sc.label, { color: T.textMuted }]} numberOfLines={2}>Empty</Text>
-              </>
-            )}
-          </View>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-}
-
-const sc = StyleSheet.create({
-  grid: {
-    flexDirection: 'row', flexWrap: 'wrap',
-    paddingHorizontal: 22, gap: 10,
-  },
-  itemWrap: {
-    width: '30%', flexGrow: 1,
-    borderRadius: 18,
-    shadowColor: '#5B608C', shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
-  },
-  item: {
-    minHeight: 106,
-    borderRadius: 18, overflow: 'hidden',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.55)',
-    backgroundColor: 'rgba(255,255,255,0.62)',
-    paddingVertical: 14, paddingHorizontal: 8,
-    alignItems: 'center', justifyContent: 'center', gap: 8,
-  },
-  itemEmpty: {
-    borderStyle: 'dashed',
-    borderColor: 'rgba(139,77,255,0.18)',
-    backgroundColor: 'rgba(255,255,255,0.35)',
-  },
-  iconCircle: {
-    width: 42, height: 42, borderRadius: 14,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  emptyCircle: {
-    width: 42, height: 42, borderRadius: 14,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(17,17,17,0.05)',
-  },
-  label: {
-    minHeight: 30,
-    fontSize: 11,
-    lineHeight: 15,
-    fontWeight: '700',
-    color: T.textSecondary,
-    textAlign: 'center',
-  },
-});
-
-// ─── Section header ───────────────────────────────────────────────────────────
-function SectionHeader({ title, onSeeAll }: { title: string; onSeeAll?: () => void }) {
-  return (
-    <View style={{
-      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-      paddingHorizontal: 22, marginBottom: 12,
-    }}>
-      <Text style={{ fontSize: 15, fontWeight: '800', color: T.textPrimary, letterSpacing: -0.2 }}>{title}</Text>
-      {onSeeAll && (
-        <TouchableOpacity onPress={onSeeAll} activeOpacity={0.7}>
-          <Text style={{ fontSize: 12, fontWeight: '600', color: T.accentBlue }}>See all</Text>
-        </TouchableOpacity>
-      )}
-    </View>
-  );
-}
-
-// ─── Board row ────────────────────────────────────────────────────────────────
-function BoardRow({ board, onPress, last }: { board: typeof BOARDS[0]; onPress: () => void; last?: boolean }) {
-  return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.78}>
-      <View style={[br.row, !last && br.border]}>
-        <View style={{ flex: 1, gap: 3 }}>
-          <Text style={br.name}>{board.name}</Text>
-          <Text style={br.latest} numberOfLines={1}>{board.latest}</Text>
-        </View>
-        <View style={br.right}>
-          {board.unread > 0 && (
-            <View style={br.badge}>
-              <Text style={br.badgeText}>{board.unread > 9 ? '9+' : board.unread}</Text>
+              </View>
             </View>
-          )}
-          <Ionicons name="chevron-forward" size={14} color={T.textMuted} />
+            <Text style={fd.time}>{item.time}</Text>
+          </View>
+
+          <Text style={fd.body}>{item.text}</Text>
+
+          {/* Poll options */}
+          <View style={pl.options}>
+            {item.pollOptions?.map((opt, i) => {
+              const pct = Math.round((opt.votes / totalVotes) * 100);
+              const isTop = opt.votes === Math.max(...(item.pollOptions?.map(o => o.votes) ?? [0]));
+              return (
+                <View key={i} style={pl.optionWrap}>
+                  <View style={[pl.optionBar, { width: `${pct}%`, backgroundColor: isTop ? T.accentBlue + '14' : 'rgba(17,17,17,0.04)' }]} />
+                  <Text style={[pl.optionLabel, isTop && { color: T.accentBlue, fontWeight: '700' }]}>{opt.label}</Text>
+                  <Text style={[pl.optionPct, isTop && { color: T.accentBlue }]}>{pct}%</Text>
+                </View>
+              );
+            })}
+          </View>
+          <Text style={pl.totalVotes}>{totalVotes} votes</Text>
+
+          {/* Actions */}
+          <View style={fd.actionsRow}>
+            <TouchableOpacity style={fd.actionBtn} activeOpacity={0.7}>
+              <Ionicons name="arrow-up-outline" size={16} color={T.accentBlue} />
+              <Text style={[fd.actionText, { color: T.accentBlue }]}>{item.upvotes}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={fd.actionBtn} activeOpacity={0.7}>
+              <Ionicons name="chatbubble-outline" size={14} color={T.textMuted} />
+              <Text style={fd.actionText}>{item.comments}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={fd.actionBtn} activeOpacity={0.7}>
+              <Ionicons name="share-outline" size={15} color={T.textMuted} />
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-const br = StyleSheet.create({
-  row: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 18, paddingVertical: 14, gap: 12,
-  },
-  border:    { borderBottomWidth: 1, borderBottomColor: 'rgba(17,17,17,0.05)' },
-  name:      { fontSize: 13, fontWeight: '700', color: T.textPrimary },
-  latest:    { fontSize: 12, color: T.textMuted, lineHeight: 17 },
-  right:     { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  badge:     {
-    backgroundColor: T.accentBlue, borderRadius: 99,
-    minWidth: 18, height: 18, paddingHorizontal: 5,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  badgeText: { fontSize: 9, fontWeight: '800', color: '#fff' },
-});
-
-function BoardsCard({ onBoardPress }: { onBoardPress: (id: string) => void }) {
-  return (
-    <View style={bc.shadow}>
-      <View style={bc.card}>
-        {BOARDS.map((b, i) => (
-          <BoardRow
-            key={b.id}
-            board={b}
-            onPress={() => onBoardPress(b.id)}
-            last={i === BOARDS.length - 1}
-          />
-        ))}
-      </View>
+      </TouchableOpacity>
     </View>
   );
 }
 
-const bc = StyleSheet.create({
+function EventCard({ item, onPress }: { item: FeedItem; onPress: () => void }) {
+  return (
+    <View style={fd.shadow}>
+      <TouchableOpacity onPress={onPress} activeOpacity={0.88}>
+        <View style={[fd.card, { borderLeftWidth: 3, borderLeftColor: item.boardColor }]}>
+          {/* Event header */}
+          <View style={fd.authorRow}>
+            <View style={[ev.iconWrap, { backgroundColor: item.boardColor + '14' }]}>
+              <Ionicons name="calendar" size={18} color={item.boardColor} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={fd.authorMeta}>
+                <View style={[fd.boardPill, { backgroundColor: item.boardColor + '10', borderColor: item.boardColor + '20' }]}>
+                  <Text style={[fd.boardPillText, { color: item.boardColor }]}>{item.board}</Text>
+                </View>
+                <Text style={fd.time}>{item.time}</Text>
+              </View>
+            </View>
+          </View>
+
+          <Text style={[fd.body, { fontWeight: '700', fontSize: 15 }]}>{item.text}</Text>
+
+          {/* Event details */}
+          <View style={ev.details}>
+            <View style={ev.detailRow}>
+              <Ionicons name="time-outline" size={14} color={T.accentPurple} />
+              <Text style={ev.detailText}>{item.eventDate}</Text>
+            </View>
+            <View style={ev.detailRow}>
+              <Ionicons name="location-outline" size={14} color={T.accentBlue} />
+              <Text style={ev.detailText}>{item.eventLocation}</Text>
+            </View>
+          </View>
+
+          {/* Attendees + actions */}
+          <View style={fd.actionsRow}>
+            <View style={ev.attendeeWrap}>
+              {[0, 1, 2].map((i) => (
+                <View key={i} style={[ev.miniAvatar, { marginLeft: i === 0 ? 0 : -6, zIndex: 3 - i }]}>
+                  <LinearGradient colors={AVATAR_GRADS[i]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={ev.miniAvatarGrad} />
+                </View>
+              ))}
+              <Text style={ev.attendeeText}>{item.eventAttendees} going</Text>
+            </View>
+            <View style={{ flex: 1 }} />
+            <TouchableOpacity activeOpacity={0.8}>
+              <LinearGradient colors={CTA} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={ev.rsvpBtn}>
+                <Text style={ev.rsvpText}>RSVP</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function MilestoneCard({ item }: { item: FeedItem }) {
+  return (
+    <View style={ms.wrap}>
+      <View style={ms.line} />
+      <View style={[ms.iconWrap, { backgroundColor: (item.milestoneColor ?? T.accentBlue) + '14' }]}>
+        <Ionicons name={(item.milestoneIcon ?? 'trophy-outline') as any} size={16} color={item.milestoneColor ?? T.accentBlue} />
+      </View>
+      <Text style={ms.text}>{item.text}</Text>
+      <Text style={ms.time}>{item.time}</Text>
+    </View>
+  );
+}
+
+// ─── Feed card styles ─────────────────────────────────────────────────────────
+const fd = StyleSheet.create({
   shadow: {
-    marginHorizontal: 22, borderRadius: 22,
-    shadowColor: '#5B608C', shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08, shadowRadius: 18, elevation: 5,
+    marginHorizontal: 16, borderRadius: 22,
+    shadowColor: '#5B608C', shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.07, shadowRadius: 16, elevation: 4,
   },
   card: {
     borderRadius: 22, overflow: 'hidden',
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.55)',
-    backgroundColor: 'rgba(255,255,255,0.62)',
+    backgroundColor: 'rgba(255,255,255,0.65)',
+    padding: 16, gap: 12,
   },
+  authorRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  avatar: {
+    width: 36, height: 36, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  avatarLetter: { fontSize: 14, fontWeight: '800', color: '#fff' },
+  authorName: { fontSize: 13, fontWeight: '700', color: T.textPrimary },
+  authorMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
+  boardPill: {
+    paddingHorizontal: 8, paddingVertical: 2,
+    borderRadius: 99, borderWidth: 1,
+  },
+  boardPillText: { fontSize: 10, fontWeight: '700' },
+  communityText: { fontSize: 11, color: T.textMuted },
+  time: { fontSize: 11, color: T.textMuted },
+  body: { fontSize: 14, color: T.textPrimary, lineHeight: 20 },
+  actionsRow: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 2 },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  actionText: { fontSize: 12, color: T.textMuted, fontWeight: '600' },
+});
+
+const pl = StyleSheet.create({
+  pollBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: 'rgba(139,77,255,0.08)',
+    paddingHorizontal: 7, paddingVertical: 2, borderRadius: 99,
+  },
+  pollBadgeText: { fontSize: 10, fontWeight: '700', color: T.accentPurple },
+  options: { gap: 6 },
+  optionWrap: {
+    flexDirection: 'row', alignItems: 'center',
+    height: 38, borderRadius: 10,
+    backgroundColor: 'rgba(17,17,17,0.02)',
+    borderWidth: 1, borderColor: 'rgba(17,17,17,0.04)',
+    overflow: 'hidden', paddingHorizontal: 12,
+  },
+  optionBar: {
+    position: 'absolute', left: 0, top: 0, bottom: 0,
+    borderRadius: 10,
+  },
+  optionLabel: { flex: 1, fontSize: 12, color: T.textSecondary, fontWeight: '500' },
+  optionPct: { fontSize: 12, color: T.textMuted, fontWeight: '700' },
+  totalVotes: { fontSize: 11, color: T.textMuted },
+});
+
+const ev = StyleSheet.create({
+  iconWrap: {
+    width: 36, height: 36, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  details: { gap: 6 },
+  detailRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  detailText: { fontSize: 12, color: T.textSecondary },
+  attendeeWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  miniAvatar: { borderRadius: 8, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.85)' },
+  miniAvatarGrad: { width: 16, height: 16, borderRadius: 8 },
+  attendeeText: { fontSize: 11, color: T.textMuted, fontWeight: '600' },
+  rsvpBtn: {
+    paddingHorizontal: 16, paddingVertical: 7, borderRadius: 99,
+  },
+  rsvpText: { fontSize: 11, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
+});
+
+const ms = StyleSheet.create({
+  wrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    marginHorizontal: 22, paddingVertical: 8,
+  },
+  line: {
+    flex: 0, width: 2, height: 24,
+    backgroundColor: 'rgba(17,17,17,0.06)', borderRadius: 1,
+  },
+  iconWrap: {
+    width: 30, height: 30, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  text: { flex: 1, fontSize: 12, color: T.textSecondary, fontWeight: '600' },
+  time: { fontSize: 11, color: T.textMuted },
 });
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 export default function HomeScreen() {
   const router = useRouter();
-  const [browseMenuVisible, setBrowseMenuVisible] = useState(false);
-  const [pinnedBrowseIds, setPinnedBrowseIds] = useState<string[]>(DEFAULT_PINNED_BROWSE_IDS);
-  const [previewLayouts, setPreviewLayouts] = useState<Array<{ x: number; y: number; width: number; height: number } | null>>(
-    Array.from({ length: MAX_BROWSE_SLOTS }, () => null),
-  );
-  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
-  const dragPositions = React.useRef(Array.from({ length: MAX_BROWSE_SLOTS }, () => new Animated.ValueXY())).current;
+  const [filter, setFilter] = useState('For You');
+  const scrollY = useRef(new Animated.Value(0)).current;
 
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const raw = await AsyncStorage.getItem(BROWSE_PINNED_STORAGE_KEY);
-        if (!raw || !active) return;
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && active) {
-          setPinnedBrowseIds(normalizePinnedBrowseIds(parsed));
-        }
-      } catch {
-        // Fall back to defaults if saved data is malformed.
-      }
-    })();
-    return () => { active = false; };
+  const renderItem = useCallback(({ item }: { item: FeedItem }) => {
+    switch (item.type) {
+      case 'poll':
+        return <PollCard item={item} onPress={() => router.push(`/post/${item.id}` as any)} />;
+      case 'event':
+        return <EventCard item={item} onPress={() => router.push(`/post/${item.id}` as any)} />;
+      case 'milestone':
+        return <MilestoneCard item={item} />;
+      default:
+        return <PostCard item={item} onPress={() => router.push(`/post/${item.id}` as any)} />;
+    }
   }, []);
 
-  const savePinnedBrowseIds = async (nextIds: string[]) => {
-    const normalized = normalizePinnedBrowseIds(nextIds);
-    setPinnedBrowseIds(normalized);
-    try {
-      await AsyncStorage.setItem(BROWSE_PINNED_STORAGE_KEY, JSON.stringify(normalized));
-    } catch {
-      // Ignore write failures and keep in-memory state.
-    }
-  };
-
-  const handleBrowseModulePress = (_moduleId: string) => {
-    router.push('/(tabs)/communities');
-  };
-
-  const movePinnedSlot = (from: number, to: number) => {
-    if (to < 0 || to >= pinnedBrowseIds.length) return;
-    const next = [...pinnedBrowseIds];
-    [next[from], next[to]] = [next[to], next[from]];
-    savePinnedBrowseIds(next);
-  };
-
-  const addBrowseModule = (moduleId: string) => {
-    if (pinnedBrowseIds.includes(moduleId)) return;
-    if (pinnedBrowseIds.length >= MAX_BROWSE_SLOTS) return;
-    savePinnedBrowseIds([...pinnedBrowseIds, moduleId]);
-  };
-
-  const removeBrowseModule = (moduleId: string) => {
-    savePinnedBrowseIds(pinnedBrowseIds.filter((id) => id !== moduleId));
-  };
-
-  const previewCards = [...pinnedBrowseIds, ...Array.from({ length: MAX_BROWSE_SLOTS - pinnedBrowseIds.length }, () => null)];
-
-  const updatePreviewLayout = (index: number, layout: { x: number; y: number; width: number; height: number }) => {
-    setPreviewLayouts((current) => {
-      const next = [...current];
-      next[index] = layout;
-      return next;
-    });
-  };
-
-  const previewResponders = previewCards.map((moduleId, index) => PanResponder.create({
-    onStartShouldSetPanResponder: () => false,
-    onMoveShouldSetPanResponder: (_, gestureState) =>
-      !!moduleId && (Math.abs(gestureState.dx) > 6 || Math.abs(gestureState.dy) > 6),
-    onMoveShouldSetPanResponderCapture: (_, gestureState) =>
-      !!moduleId && (Math.abs(gestureState.dx) > 6 || Math.abs(gestureState.dy) > 6),
-    onPanResponderGrant: () => {
-      if (!moduleId) return;
-      setDraggingIndex(index);
-      dragPositions[index].setOffset({
-        x: (dragPositions[index].x as any)._value ?? 0,
-        y: (dragPositions[index].y as any)._value ?? 0,
-      });
-      dragPositions[index].setValue({ x: 0, y: 0 });
-    },
-    onPanResponderMove: (_, gestureState) => {
-      if (!moduleId) return;
-      dragPositions[index].setValue({ x: gestureState.dx, y: gestureState.dy });
-    },
-    onPanResponderRelease: (_, gestureState) => {
-      if (!moduleId) return;
-      const startLayout = previewLayouts[index];
-      let swapIndex = index;
-
-      if (startLayout) {
-        const dragCenterX = startLayout.x + (startLayout.width / 2) + gestureState.dx;
-        const dragCenterY = startLayout.y + (startLayout.height / 2) + gestureState.dy;
-
-        previewLayouts.forEach((layout, layoutIndex) => {
-          if (!layout) return;
-          const withinX = dragCenterX >= layout.x && dragCenterX <= layout.x + layout.width;
-          const withinY = dragCenterY >= layout.y && dragCenterY <= layout.y + layout.height;
-          if (withinX && withinY) swapIndex = layoutIndex;
-        });
-      }
-
-      if (swapIndex !== index && swapIndex < pinnedBrowseIds.length) {
-        movePinnedSlot(index, swapIndex);
-      }
-
-      dragPositions[index].flattenOffset();
-      Animated.spring(dragPositions[index], {
-        toValue: { x: 0, y: 0 },
-        useNativeDriver: true,
-        bounciness: 6,
-      }).start(() => setDraggingIndex(null));
-    },
-    onPanResponderTerminationRequest: () => false,
-    onPanResponderTerminate: () => {
-      dragPositions[index].flattenOffset();
-      Animated.spring(dragPositions[index], {
-        toValue: { x: 0, y: 0 },
-        useNativeDriver: true,
-      }).start(() => setDraggingIndex(null));
-    },
-  }));
+  const ListHeader = useCallback(() => (
+    <>
+      <PresenceStrip />
+      <FilterChips active={filter} onSelect={setFilter} />
+      <View style={{ height: 8 }} />
+    </>
+  ), [filter]);
 
   return (
     <View style={s.root}>
@@ -539,404 +675,26 @@ export default function HomeScreen() {
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <Header onBell={() => router.push('/(tabs)/inbox')} />
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
-
-          {/* Live hero */}
-          <HeroCard onPress={() => router.push('/(tabs)/communities')} />
-
-          {/* Quick shortcuts */}
-          <View style={s.section}>
-            <SectionHeader title="Browse" />
-            <BrowseGrid
-              pinnedIds={pinnedBrowseIds}
-              onModulePress={handleBrowseModulePress}
-              onMorePress={() => setBrowseMenuVisible(true)}
-            />
-          </View>
-
-          {/* Your Boards */}
-          <View style={s.section}>
-            <SectionHeader title="Your Boards" onSeeAll={() => router.push('/(tabs)/communities')} />
-            <BoardsCard onBoardPress={(id) => router.push(`/board/${id}` as any)} />
-          </View>
-
-          <View style={{ height: 40 }} />
-        </ScrollView>
+        <Animated.FlatList
+          data={FEED_DATA}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          ListHeaderComponent={ListHeader}
+          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+          contentContainerStyle={s.scroll}
+          showsVerticalScrollIndicator={false}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+            { useNativeDriver: true },
+          )}
+          scrollEventThrottle={16}
+        />
       </SafeAreaView>
-
-      <Modal
-        transparent
-        visible={browseMenuVisible}
-        animationType="fade"
-        onRequestClose={() => setBrowseMenuVisible(false)}
-      >
-        <Pressable style={bm.backdrop} onPress={() => setBrowseMenuVisible(false)} />
-        <View style={bm.sheetWrap} pointerEvents="box-none">
-          <BlurView intensity={60} tint="light" style={bm.sheet}>
-            <View style={bm.headerRow}>
-              <View style={bm.headerCopy}>
-                <Text style={bm.title}>Customize Browse</Text>
-                <Text style={bm.subtitle}>Drag cards in the home preview to reorder them. Add or remove modules directly.</Text>
-              </View>
-              <TouchableOpacity onPress={() => setBrowseMenuVisible(false)} style={bm.closeBtn} activeOpacity={0.8}>
-                <Ionicons name="close" size={16} color={T.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={bm.caption}>Home Preview</Text>
-            <View style={bm.previewGrid}>
-              {previewCards.map((id, index) => {
-                const module = id ? getBrowseModule(id) : null;
-                return (
-                  <Animated.View
-                    key={id ?? `preview-empty-${index}`}
-                    style={[
-                      bm.previewCardWrap,
-                      draggingIndex === index && bm.previewCardWrapActive,
-                      { transform: dragPositions[index].getTranslateTransform(), zIndex: draggingIndex === index ? 10 : 1 },
-                    ]}
-                    onLayout={(event) => updatePreviewLayout(index, event.nativeEvent.layout)}
-                    {...(module ? previewResponders[index].panHandlers : {})}
-                  >
-                    <View style={[bm.previewCard, !module && bm.previewCardEmpty]}>
-                      <View style={bm.previewSlotBadge}>
-                        <Text style={bm.previewSlotBadgeText}>{index + 1}</Text>
-                      </View>
-                      {module ? (
-                        <>
-                          <TouchableOpacity
-                            activeOpacity={0.85}
-                            style={bm.previewActionBtn}
-                            onPress={() => removeBrowseModule(module.id)}
-                          >
-                            <Ionicons name="remove" size={14} color="#fff" />
-                          </TouchableOpacity>
-                          <View style={[bm.previewIcon, { backgroundColor: module.color + '14' }]}>
-                            <Ionicons name={module.icon as any} size={18} color={module.color} />
-                          </View>
-                          <Text style={bm.previewLabel} numberOfLines={2}>{module.label}</Text>
-                        </>
-                      ) : (
-                        <>
-                          <View style={bm.previewEmptyIcon}>
-                            <Ionicons name="add" size={18} color={T.textMuted} />
-                          </View>
-                          <Text style={bm.previewLabel} numberOfLines={2}>Empty Slot</Text>
-                        </>
-                      )}
-                    </View>
-                  </Animated.View>
-                );
-              })}
-              <View style={bm.previewCardWrap}>
-                <View style={[bm.previewCard, bm.previewCardMore]}>
-                  <View style={[bm.previewIcon, { backgroundColor: 'rgba(139,77,255,0.12)' }]}>
-                    <Ionicons name="ellipsis-horizontal-circle-outline" size={18} color={T.accentPurple} />
-                  </View>
-                  <Text style={bm.previewLabel} numberOfLines={2}>More</Text>
-                </View>
-              </View>
-            </View>
-
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              scrollEnabled={draggingIndex === null}
-              contentContainerStyle={bm.sheetScroll}
-            >
-              <Text style={bm.caption}>All Modules</Text>
-              <View style={bm.moduleGrid}>
-                {BROWSE_MODULES.filter((module) => !pinnedBrowseIds.includes(module.id)).map((module) => {
-                  return (
-                    <View
-                      key={module.id}
-                      style={bm.moduleCardWrap}
-                    >
-                      <View style={bm.moduleCard}>
-                        <TouchableOpacity
-                          activeOpacity={0.85}
-                          style={[bm.moduleActionBtn, bm.moduleActionBtnAdd, pinnedBrowseIds.length >= MAX_BROWSE_SLOTS && bm.moduleActionBtnDisabled]}
-                          disabled={pinnedBrowseIds.length >= MAX_BROWSE_SLOTS}
-                          onPress={() => addBrowseModule(module.id)}
-                        >
-                          <Ionicons
-                            name="add"
-                            size={15}
-                            color="#fff"
-                          />
-                        </TouchableOpacity>
-                        <View style={[bm.moduleIcon, { backgroundColor: module.color + '12' }]}>
-                          <Ionicons name={module.icon as any} size={16} color={module.color} />
-                        </View>
-                        <Text style={bm.moduleText} numberOfLines={2}>{module.label}</Text>
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-              <TouchableOpacity
-                activeOpacity={0.82}
-                onPress={() => {
-                  savePinnedBrowseIds(DEFAULT_PINNED_BROWSE_IDS);
-                }}
-                style={bm.resetBtn}
-              >
-                <Ionicons name="refresh-outline" size={15} color={T.accentBlue} />
-                <Text style={bm.resetBtnText}>Reset To Defaults</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </BlurView>
-        </View>
-      </Modal>
     </View>
   );
 }
 
-// ─── Root styles ──────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   root: { flex: 1 },
-  scroll:  { paddingTop: 4, paddingBottom: 32, gap: 28 },
-  section: { gap: 0 },
-});
-
-const bm = StyleSheet.create({
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(17,17,17,0.30)',
-  },
-  sheetWrap: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    padding: 16,
-  },
-  sheet: {
-    borderRadius: 24,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.55)',
-    backgroundColor: 'rgba(250,246,252,0.96)',
-    padding: 16,
-    gap: 10,
-    maxHeight: '82%',
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  headerCopy: {
-    flex: 1,
-    gap: 4,
-  },
-  title: { fontSize: 16, fontWeight: '800', color: T.textPrimary, letterSpacing: -0.2 },
-  subtitle: {
-    fontSize: 12,
-    lineHeight: 17,
-    color: T.textSecondary,
-  },
-  closeBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.75)',
-    borderWidth: 1,
-    borderColor: 'rgba(139,77,255,0.20)',
-  },
-  caption: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#6E7388',
-    marginTop: 6,
-  },
-  sheetScroll: {
-    gap: 10,
-    paddingBottom: 4,
-  },
-  previewGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  previewCardWrap: {
-    width: '31%',
-    borderRadius: 18,
-    overflow: 'hidden',
-  },
-  previewCardWrapActive: {
-    shadowColor: '#4B50F8',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.18,
-    shadowRadius: 14,
-    elevation: 6,
-  },
-  previewCard: {
-    minHeight: 108,
-    borderRadius: 18,
-    paddingHorizontal: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(139,77,255,0.10)',
-    backgroundColor: '#FFFFFF',
-  },
-  previewCardEmpty: {
-    borderStyle: 'dashed',
-    backgroundColor: 'rgba(244,246,251,0.96)',
-    borderColor: 'rgba(139,77,255,0.18)',
-  },
-  previewCardMore: {
-    minHeight: 108,
-    borderRadius: 18,
-    paddingHorizontal: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    borderWidth: 1,
-    backgroundColor: '#FFFFFF',
-    borderColor: 'rgba(139,77,255,0.10)',
-  },
-  previewSlotBadge: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    minWidth: 20,
-    height: 20,
-    paddingHorizontal: 6,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(17,17,17,0.08)',
-  },
-  previewSlotBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#454B5C',
-  },
-  previewIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(17,17,17,0.04)',
-  },
-  previewEmptyIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(221,226,238,0.92)',
-  },
-  previewActionBtn: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#E655C5',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.65)',
-    shadowColor: '#A82A86',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.18,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  previewLabel: {
-    minHeight: 30,
-    fontSize: 11,
-    lineHeight: 15,
-    fontWeight: '800',
-    color: '#313748',
-    textAlign: 'center',
-  },
-  moduleGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  moduleCardWrap: {
-    width: '48%',
-    borderRadius: 18,
-    overflow: 'hidden',
-  },
-  moduleCard: {
-    minHeight: 112,
-    borderRadius: 18,
-    paddingHorizontal: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(139,77,255,0.10)',
-    backgroundColor: '#FFFFFF',
-  },
-  moduleIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(17,17,17,0.04)',
-  },
-  moduleText: {
-    minHeight: 30,
-    fontSize: 11,
-    lineHeight: 15,
-    fontWeight: '800',
-    color: '#313748',
-    textAlign: 'center',
-  },
-  moduleActionBtn: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.68)',
-    shadowColor: '#4250D8',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.18,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  moduleActionBtnAdd: {
-    backgroundColor: '#4B50F8',
-  },
-  moduleActionBtnDisabled: {
-    opacity: 0.4,
-  },
-  resetBtn: {
-    height: 44,
-    borderRadius: 14,
-    marginTop: 4,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#EEF1FF',
-    borderWidth: 1,
-    borderColor: 'rgba(75,80,248,0.22)',
-  },
-  resetBtnText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: T.accentBlue,
-  },
+  scroll: { paddingBottom: 32 },
 });

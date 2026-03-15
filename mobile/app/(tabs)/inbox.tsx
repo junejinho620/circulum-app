@@ -118,9 +118,9 @@ function ActivitySummary() {
         <View style={as.statsRow}>
           <SummaryItem icon="chatbubble-outline" count={7} label="replies" color={T.accentBlue} />
           <View style={as.divider} />
-          <SummaryItem icon="at" count={2} label="mentions" color={T.accentPurple} />
+          <SummaryItem icon="at" count={2} label="mentions" color={T.accentBlue} />
           <View style={as.divider} />
-          <SummaryItem icon="mail-outline" count={1} label="message" color={T.accentPink} />
+          <SummaryItem icon="mail-outline" count={1} label="message" color={T.accentBlue} />
         </View>
       </View>
     </View>

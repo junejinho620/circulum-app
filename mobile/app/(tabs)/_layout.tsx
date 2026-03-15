@@ -48,7 +48,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="feed"
         options={{
-          title: 'Home',
+          title: 'Feed',
           tabBarIcon: ({ focused }) => (
             <TabIcon name={focused ? 'home' : 'home-outline'} focused={focused} />
           ),
@@ -114,7 +114,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 4,
     shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
