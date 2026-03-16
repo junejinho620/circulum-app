@@ -600,7 +600,7 @@ const bd = StyleSheet.create({
   accent: { height: 4 },
   handle: {
     width: 36, height: 4, borderRadius: 2,
-    backgroundColor: 'rgba(17,17,17,0.12)',
+    backgroundColor: 'rgba(0,0,0,0.12)',
     alignSelf: 'center', marginTop: 10,
   },
   content: { padding: 22, gap: 20, paddingBottom: 40 },
@@ -790,7 +790,7 @@ const ae = StyleSheet.create({
   },
   handle: {
     width: 36, height: 4, borderRadius: 2,
-    backgroundColor: 'rgba(17,17,17,0.12)',
+    backgroundColor: 'rgba(0,0,0,0.12)',
     alignSelf: 'center', marginTop: 10,
   },
   headerRow: {
@@ -937,8 +937,8 @@ const im = StyleSheet.create({
   },
   handle: {
     width: 36, height: 4, borderRadius: 2,
-    backgroundColor: 'rgba(17,17,17,0.12)',
-    alignSelf: 'center', marginBottom: 16,
+    backgroundColor: 'rgba(0,0,0,0.12)',
+    alignSelf: 'center', marginBottom: 14,
   },
   title: { fontSize: 18, fontWeight: '800', color: T.textPrimary, textAlign: 'center' },
   desc: { fontSize: 13, color: T.textMuted, textAlign: 'center', marginTop: 4, marginBottom: 20 },
@@ -1220,7 +1220,7 @@ const ex = StyleSheet.create({
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(17,17,17,0.25)' },
   sheetWrap: { flex: 1, justifyContent: 'flex-end' },
   sheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: '#FAFBFF', overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.55)', borderBottomWidth: 0, padding: 22, paddingBottom: 40 },
-  handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(17,17,17,0.12)', alignSelf: 'center', marginBottom: 16 },
+  handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(0,0,0,0.12)', alignSelf: 'center', marginBottom: 14 },
   title: { fontSize: 18, fontWeight: '800', color: T.textPrimary, textAlign: 'center', marginBottom: 16 },
   optionsList: { gap: 4 },
   optionRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: 'rgba(17,17,17,0.04)' },

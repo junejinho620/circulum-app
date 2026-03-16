@@ -52,6 +52,7 @@ export default function RootLayout() {
             <Stack.Screen name="professors" options={{ presentation: 'card' }} />
             <Stack.Screen name="professor/[id]" options={{ presentation: 'card' }} />
             <Stack.Screen name="study-buddy" options={{ presentation: 'card' }} />
+            <Stack.Screen name="campus-map" options={{ presentation: 'card' }} />
           </Stack>
         </QueryClientProvider>
       </SafeAreaProvider>

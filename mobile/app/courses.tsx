@@ -571,11 +571,11 @@ function CourseListCard({ course, onPress, onBookmark, saved }: {
 
 const cl = StyleSheet.create({
   card: {
-    marginHorizontal: 22, borderRadius: 18, overflow: 'hidden',
+    marginHorizontal: 22, borderRadius: 20, overflow: 'hidden',
     backgroundColor: 'rgba(255,255,255,0.72)',
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.55)',
-    shadowColor: '#5B608C', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+    shadowColor: '#5B608C', shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.06, shadowRadius: 10, elevation: 3,
     marginBottom: 10,
   },
   inner: { padding: 14, gap: 8 },
@@ -652,11 +652,11 @@ const qp = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: T.white, borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    padding: 22, paddingBottom: 36, gap: 10,
+    padding: 22, paddingBottom: 36, gap: 12,
   },
   handle: {
     width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(0,0,0,0.12)',
-    alignSelf: 'center', marginBottom: 8,
+    alignSelf: 'center', marginBottom: 14,
   },
   header: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   codeWrap: {

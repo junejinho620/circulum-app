@@ -391,10 +391,12 @@ function ReviewCard({ review }: { review: Review }) {
 
 const rc = StyleSheet.create({
   card: {
-    marginHorizontal: 22, borderRadius: 18, overflow: 'hidden',
+    marginHorizontal: 22, borderRadius: 20, overflow: 'hidden',
     backgroundColor: 'rgba(255,255,255,0.72)',
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.55)',
-    padding: 14, gap: 8, marginBottom: 8,
+    padding: 16, gap: 10, marginBottom: 10,
+    shadowColor: '#5B608C', shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.06, shadowRadius: 10, elevation: 3,
   },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   anonAvatar: {

@@ -171,7 +171,7 @@ const sh = StyleSheet.create({
     paddingHorizontal: 22,
   },
   left: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  title: { fontSize: 16, fontWeight: '800', color: T.textPrimary, letterSpacing: -0.2 },
+  title: { fontSize: 15, fontWeight: '800', color: T.textPrimary, letterSpacing: -0.2 },
   seeAll: { fontSize: 12, fontWeight: '600', color: T.accentBlue },
 });
 
@@ -351,13 +351,13 @@ function ModulesGrid({ onModulePress }: { onModulePress: (id: string) => void })
 const mg = StyleSheet.create({
   grid: {
     flexDirection: 'row', flexWrap: 'wrap',
-    paddingHorizontal: 22, gap: 10,
+    paddingHorizontal: 22, gap: 12,
   },
   cardWrap: {
     width: '30%', flexGrow: 1,
     borderRadius: 18,
     shadowColor: '#5B608C', shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.05, shadowRadius: 8, elevation: 3,
+    shadowOpacity: 0.06, shadowRadius: 10, elevation: 3,
   },
   card: {
     borderRadius: 18, overflow: 'hidden',
@@ -487,6 +487,7 @@ export default function ExploreScreen() {
             if (id === 'catalog') router.push('/courses' as any);
             if (id === 'professors') router.push('/professors' as any);
             if (id === 'study-buddy') router.push('/study-buddy' as any);
+            if (id === 'map') router.push('/campus-map' as any);
           }} />
 
           {/* Suggested actions */}
@@ -508,7 +509,7 @@ const s = StyleSheet.create({
   root: { flex: 1 },
   nav: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 22, paddingTop: 10, paddingBottom: 16,
+    paddingHorizontal: 22, paddingTop: 10, paddingBottom: 12,
   },
   navSpacer: { width: 38 },
   navActionWrap: { borderRadius: 19, overflow: 'hidden' },

@@ -551,7 +551,7 @@ const qp = StyleSheet.create({
   },
   handle: {
     width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(0,0,0,0.12)',
-    alignSelf: 'center', marginBottom: 4,
+    alignSelf: 'center', marginBottom: 14,
   },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   avatar: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
