@@ -119,6 +119,23 @@ export class User {
   @OneToMany(() => ModerationAction, (ma) => ma.targetUser)
   moderationActions: ModerationAction[];
 
+  // ─── Profile fields ────────────────────────────────────────
+  @Column({ type: 'text', nullable: true })
+  bio: string;
+
+  @Column({ nullable: true })
+  avatarUrl: string;
+
+  @Column({ length: 10, nullable: true })
+  year: string; // '1st', '2nd', '3rd', '4th', '5th+', 'Grad', 'Alumni'
+
+  @Column({ type: 'simple-array', nullable: true })
+  interests: string[];
+
+  // ─── Push notifications ───────────────────────────────────
+  @Column({ nullable: true })
+  pushToken: string;
+
   @Column({ nullable: true, type: 'timestamptz' })
   lastSeenAt: Date;
 

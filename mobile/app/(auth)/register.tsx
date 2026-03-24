@@ -445,10 +445,55 @@ export default function RegisterScreen() {
     if (step === 'topics')   setStep('identity');
   };
 
-  const handleEmailContinue    = () => setStep('code');
-  const handleCodeVerify       = () => setStep('identity');
-  const handleIdentityContinue = () => setStep('topics');
-  const handleFinish           = () => router.replace('/(tabs)/feed');
+  const validateEmail = () => {
+    const e = form.email.trim();
+    if (!e) return 'Email is required';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return 'Enter a valid email address';
+    if (!/\.edu$/i.test(e.split('@')[1] ?? '')) return 'Use your university (.edu) email';
+    return '';
+  };
+
+  const validatePassword = () => {
+    const p = form.password;
+    if (!p) return 'Password is required';
+    if (p.length < 8) return 'At least 8 characters';
+    return '';
+  };
+
+  const handleEmailContinue = () => {
+    const emailErr = validateEmail();
+    const passErr = validatePassword();
+    if (emailErr || passErr) {
+      setErrors({ email: emailErr, password: passErr });
+      return;
+    }
+    setStep('code');
+  };
+
+  const handleCodeVerify = () => {
+    if (codeDigits.some((d) => !d)) {
+      setErrors({ code: 'Enter the full code' });
+      return;
+    }
+    setErrors({});
+    setStep('identity');
+  };
+
+  const handleIdentityContinue = () => {
+    const h = form.handle.trim();
+    if (!h) { setErrors({ handle: 'Pick a nickname' }); return; }
+    if (h.length < 3) { setErrors({ handle: 'At least 3 characters' }); return; }
+    setErrors({});
+    setStep('topics');
+  };
+
+  const handleFinish = () => {
+    setLoading(true);
+    setTimeout(() => {
+      setLoading(false);
+      router.replace('/(tabs)/feed');
+    }, 800);
+  };
 
   return (
     <View style={s.root}>
@@ -499,15 +544,30 @@ export default function RegisterScreen() {
                     <Text style={s.subtext}>
                       Sign up using your university email to access your school community.
                     </Text>
-                    <View style={{ gap: Spacing.xs }}>
+                    <View style={{ gap: Spacing.md }}>
+                      <View style={{ gap: Spacing.xs }}>
+                        <GlassInput
+                          placeholder="Enter your school email"
+                          value={form.email}
+                          onChangeText={(v) => update('email', v)}
+                          keyboardType="email-address"
+                          error={errors.email}
+                        />
+                        {!errors.email && (
+                          <View style={s.hintRow}>
+                            <Ionicons name="shield-checkmark-outline" size={12} color={T.accentBlue} />
+                            <Text style={s.helperText}>We verify your .edu email to keep the community campus-only.</Text>
+                          </View>
+                        )}
+                      </View>
                       <GlassInput
-                        placeholder="Enter your school email"
-                        value={form.email}
-                        onChangeText={(v) => update('email', v)}
-                        keyboardType="email-address"
-                        error={errors.email}
+                        placeholder="Create a password"
+                        value={form.password}
+                        onChangeText={(v) => update('password', v)}
+                        secureTextEntry
+                        error={errors.password}
+                        hint="Min 8 characters"
                       />
-                      {!errors.email && <Text style={s.helperText}>We’ll send a verification link.</Text>}
                     </View>
                     <GradientButton label="Continue" onPress={handleEmailContinue} />
                   </BlurView>
@@ -527,12 +587,13 @@ export default function RegisterScreen() {
                   <BlurView intensity={55} tint="light" style={s.card}>
                     <Text style={s.headline}>Verify your{'\n'}email</Text>
                     <Text style={s.subtext}>
-                      We’ve sent a {CODE_LEN}-digit code to your inbox.
+                      We've sent a {CODE_LEN}-digit code to your inbox.
                     </Text>
-                    <OtpInput digits={codeDigits} onChange={setCodeDigits} />
+                    <OtpInput digits={codeDigits} onChange={(d) => { setCodeDigits(d); setErrors((p) => ({ ...p, code: '' })); }} />
+                    {!!errors.code && <Text style={{ fontSize: Typography.sm, color: T.error, textAlign: 'center' }}>{errors.code}</Text>}
                     <TouchableOpacity style={s.resendRow}>
                       <Text style={s.helperText}>
-                        Didn’t receive a code?{'  '}<Text style={s.resendLink}>Resend</Text>
+                        Didn't receive a code?{'  '}<Text style={s.resendLink}>Resend</Text>
                       </Text>
                     </TouchableOpacity>
                     <GradientButton label="Verify" onPress={handleCodeVerify} />
@@ -571,9 +632,29 @@ export default function RegisterScreen() {
                     <Text style={s.headline}>What do you{'\n'}want to see?</Text>
                     <Text style={s.subtext}>Choose topics to personalize your campus feed.</Text>
                   </View>
+                  {/* Profile preview */}
+                  <View style={s.previewRow}>
+                    {(() => {
+                      const a = AVATARS.find((x) => x.id === selectedAvatar) ?? AVATARS[0];
+                      return (
+                        <LinearGradient colors={a.grad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.previewAvatar}>
+                          <AvatarShapeEl shape={a.shape} />
+                        </LinearGradient>
+                      );
+                    })()}
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text style={s.previewName}>{form.handle || 'Your nickname'}</Text>
+                      <Text style={s.previewSub}>{form.email}</Text>
+                    </View>
+                  </View>
+
                   <BlurView intensity={55} tint="light" style={s.card}>
                     <TopicChips selected={selectedTopics} onToggle={toggleTopic} />
-                    <Text style={[s.helperText, { textAlign: 'center' }]}>You can change this anytime.</Text>
+                    <Text style={[s.helperText, { textAlign: 'center' }]}>
+                      {selectedTopics.length === 0
+                        ? 'Pick at least one topic to get started.'
+                        : `${selectedTopics.length} topic${selectedTopics.length > 1 ? 's' : ''} selected \u2014 you can change this anytime.`}
+                    </Text>
                     <GradientButton label="Finish Setup" onPress={handleFinish} loading={loading} />
                   </BlurView>
                 </View>
@@ -636,6 +717,7 @@ const s = StyleSheet.create({
   headline:   { fontSize: 30, fontWeight: '800', color: '#111111', letterSpacing: -0.5, lineHeight: 36 },
   subtext:    { fontSize: Typography.base, color: '#5F6472', lineHeight: Typography.base * 1.65, fontWeight: '400' },
   helperText: { fontSize: Typography.sm, color: '#8A90A2', marginLeft: 2 },
+  hintRow:    { flexDirection: 'row', alignItems: 'center', gap: 5, marginLeft: 2 },
 
   // Resend
   resendRow:  { alignItems: 'center' },
@@ -645,4 +727,10 @@ const s = StyleSheet.create({
   signInRow:  { alignItems: 'center', paddingVertical: Spacing.xs },
   signInHint: { fontSize: 14, color: '#8A90A2', textAlign: 'center' },
   signInLink: { color: '#4B50F8', fontWeight: '600' },
+
+  // Profile preview
+  previewRow:    { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 4 },
+  previewAvatar: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  previewName:   { fontSize: 15, fontWeight: '700', color: '#111111' },
+  previewSub:    { fontSize: 12, color: '#8A90A2' },
 });

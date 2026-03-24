@@ -1,12 +1,15 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, KeyboardAvoidingView, Platform, Animated,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import EmptyState from '../../src/components/common/EmptyState';
+import { DetailHeaderSkeleton, SkeletonList } from '../../src/components/common/Skeletons';
+import SuccessToast from '../../src/components/common/SuccessToast';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const T = {
@@ -27,6 +30,62 @@ const PUB: [string, string, string] = ['#3DAB73', '#2BC77A', '#1EB589'];
 const GLASS = 'rgba(255,255,255,0.62)';
 const GLASS_BORDER = 'rgba(255,255,255,0.55)';
 const GLASS_LIGHT = 'rgba(255,255,255,0.48)';
+
+// ─── Anonymous tap quips ─────────────────────────────────────────────────────
+const ANON_QUIPS = [
+  'Nice try! Identity sealed \u{1F512}',
+  'Behind the mask\u2026 another mask \u{1F3AD}',
+  'Anonymous and proud \u270A',
+  'Some mysteries stay unsolved \u{1F311}',
+  'The shadows keep my secrets \u{1F464}',
+  'You\'ll never know \u{1F60F}',
+];
+
+function pickQuip() {
+  return ANON_QUIPS[Math.floor(Math.random() * ANON_QUIPS.length)];
+}
+
+// ─── AnonToast ───────────────────────────────────────────────────────────────
+function AnonToast({ message, onDone }: { message: string; onDone: () => void }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const scale = useRef(new Animated.Value(0.85)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 140, friction: 8 }),
+      Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }),
+    ]).start();
+    const t = setTimeout(() => {
+      Animated.timing(opacity, { toValue: 0, duration: 350, useNativeDriver: true }).start(onDone);
+    }, 1800);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <Animated.View style={[anonT.wrap, { opacity, transform: [{ scale }] }]}>
+      <View style={anonT.card}>
+        <Ionicons name="finger-print-outline" size={20} color={T.accentPurple} />
+        <Text style={anonT.text}>{message}</Text>
+      </View>
+    </Animated.View>
+  );
+}
+
+const anonT = StyleSheet.create({
+  wrap: {
+    position: 'absolute', top: 100, left: 0, right: 0,
+    alignItems: 'center', zIndex: 999, pointerEvents: 'none',
+  },
+  card: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderRadius: 16, paddingHorizontal: 20, paddingVertical: 14,
+    borderWidth: 1, borderColor: 'rgba(139,77,255,0.2)',
+    shadowColor: '#8B4DFF', shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15, shadowRadius: 20, elevation: 8,
+  },
+  text: { fontSize: 14, fontWeight: '600', color: T.textPrimary },
+});
 
 // ─── Avatar gradient palette ──────────────────────────────────────────────────
 const AVATAR_GRADS: [string, string][] = [
@@ -59,6 +118,12 @@ const POST = {
   commentCount: 38,
   viewCount: 891,
   activeNow: 12,
+};
+
+const POST_MAP: Record<string, typeof POST> = {
+  '1': POST,
+  '2': POST,
+  '3': POST,
 };
 
 type Reply = {
@@ -157,7 +222,7 @@ const ub = StyleSheet.create({
 
 // ─── PostHeroCard ─────────────────────────────────────────────────────────────
 // Premium anchor card for the original post — elevated, spacious, clear hierarchy.
-function PostHeroCard() {
+function PostHeroCard({ post, onAvatarPress }: { post: typeof POST; onAvatarPress: (handle: string) => void }) {
   return (
     <View style={hero.outer}>
       {/* Subtle gradient glow behind card */}
@@ -169,17 +234,19 @@ function PostHeroCard() {
         {/* Board context row */}
         <View style={hero.boardRow}>
           <View style={hero.boardPill}>
-            <Ionicons name={POST.categoryIcon} size={12} color={POST.categoryColor} />
-            <Text style={[hero.boardText, { color: POST.categoryColor }]}>{POST.board}</Text>
+            <Ionicons name={post.categoryIcon} size={12} color={post.categoryColor} />
+            <Text style={[hero.boardText, { color: post.categoryColor }]}>{post.board}</Text>
           </View>
-          <Text style={hero.timestamp}>{POST.timestamp}</Text>
+          <Text style={hero.timestamp}>{post.timestamp}</Text>
         </View>
 
         {/* Author */}
         <View style={hero.authorRow}>
-          <GradAvatar handle={POST.author} size={40} />
+          <TouchableOpacity onPress={() => onAvatarPress(post.author)} activeOpacity={0.7}>
+            <GradAvatar handle={post.author} size={40} />
+          </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text style={hero.handle}>{POST.author}</Text>
+            <Text style={hero.handle}>{post.author}</Text>
             <Text style={hero.authorSub}>Anonymous student</Text>
           </View>
           <TouchableOpacity activeOpacity={0.7} style={hero.moreBtn}>
@@ -188,19 +255,19 @@ function PostHeroCard() {
         </View>
 
         {/* Title */}
-        <Text style={hero.title}>{POST.title}</Text>
+        <Text style={hero.title}>{post.title}</Text>
 
         {/* Body */}
-        <Text style={hero.body}>{POST.body}</Text>
+        <Text style={hero.body}>{post.body}</Text>
 
         {/* Interaction bar */}
         <View style={hero.divider} />
         <View style={hero.actions}>
-          <UpvoteBtn count={POST.upvotes} />
+          <UpvoteBtn count={post.upvotes} />
 
           <TouchableOpacity style={hero.actionBtn} activeOpacity={0.7}>
             <Ionicons name="chatbubble-outline" size={16} color={T.textMuted} />
-            <Text style={hero.actionText}>{POST.commentCount}</Text>
+            <Text style={hero.actionText}>{post.commentCount}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={hero.actionBtn} activeOpacity={0.7}>
@@ -280,7 +347,7 @@ const hero = StyleSheet.create({
 
 // ─── EngagementStrip ──────────────────────────────────────────────────────────
 // Lightweight context module: live participants + trending signal
-function EngagementStrip() {
+function EngagementStrip({ post }: { post: typeof POST }) {
   const handles = ['CosmicNova88', 'BlueMoonTide', 'VelvetStorm', 'AquaSpectra', 'PrismaticFox'];
   const overlap = 9;
   return (
@@ -303,7 +370,7 @@ function EngagementStrip() {
 
         <View style={{ flex: 1 }}>
           <Text style={es.stat}>
-            <Text style={{ fontWeight: '700', color: T.textPrimary }}>{POST.activeNow} people</Text>
+            <Text style={{ fontWeight: '700', color: T.textPrimary }}>{post.activeNow} people</Text>
             {' '}in this thread now
           </Text>
         </View>
@@ -340,7 +407,7 @@ const es = StyleSheet.create({
 // ─── SortPills ────────────────────────────────────────────────────────────────
 type SortOption = 'top' | 'new' | 'relevant';
 
-function SortPills({ active, onSelect }: { active: SortOption; onSelect: (s: SortOption) => void }) {
+function SortPills({ active, onSelect, post }: { active: SortOption; onSelect: (s: SortOption) => void; post: typeof POST }) {
   const options: { key: SortOption; label: string; icon: string }[] = [
     { key: 'top', label: 'Top', icon: 'flame-outline' },
     { key: 'new', label: 'New', icon: 'time-outline' },
@@ -349,7 +416,7 @@ function SortPills({ active, onSelect }: { active: SortOption; onSelect: (s: Sor
 
   return (
     <View style={sp.row}>
-      <Text style={sp.label}>{POST.commentCount} replies</Text>
+      <Text style={sp.label}>{post.commentCount} replies</Text>
       <View style={{ flex: 1 }} />
       {options.map(o => {
         const isActive = active === o.key;
@@ -400,11 +467,12 @@ const sp = StyleSheet.create({
 
 // ─── HighlightedCommentCard ───────────────────────────────────────────────────
 // Used for top reply or helpful answer — subtle purple accent glow.
-function HighlightedCommentCard({ comment, label, labelColor, onReply }: {
+function HighlightedCommentCard({ comment, label, labelColor, onReply, onAvatarPress }: {
   comment: Comment;
   label: string;
   labelColor: string;
   onReply: (author: string) => void;
+  onAvatarPress: (handle: string) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
 
@@ -434,7 +502,9 @@ function HighlightedCommentCard({ comment, label, labelColor, onReply }: {
         <View style={hl.content}>
           {/* Author */}
           <View style={hl.authorRow}>
-            <GradAvatar handle={comment.author} size={34} />
+            <TouchableOpacity onPress={() => onAvatarPress(comment.author)} activeOpacity={0.7}>
+              <GradAvatar handle={comment.author} size={34} />
+            </TouchableOpacity>
             <View style={{ flex: 1 }}>
               <Text style={hl.handle}>{comment.author}</Text>
               <Text style={hl.time}>{comment.timestamp}</Text>
@@ -479,7 +549,7 @@ function HighlightedCommentCard({ comment, label, labelColor, onReply }: {
 
       {/* Nested replies */}
       {expanded && comment.replies.map((r, i) => (
-        <NestedReply key={r.id} reply={r} isLast={i === comment.replies.length - 1} />
+        <NestedReply key={r.id} reply={r} isLast={i === comment.replies.length - 1} onAvatarPress={onAvatarPress} />
       ))}
     </View>
   );
@@ -524,7 +594,7 @@ const hl = StyleSheet.create({
 });
 
 // ─── NestedReply ──────────────────────────────────────────────────────────────
-function NestedReply({ reply, isLast }: { reply: Reply; isLast: boolean }) {
+function NestedReply({ reply, isLast, onAvatarPress }: { reply: Reply; isLast: boolean; onAvatarPress: (handle: string) => void }) {
   return (
     <View style={nr.wrap}>
       {/* Thread connector */}
@@ -536,7 +606,9 @@ function NestedReply({ reply, isLast }: { reply: Reply; isLast: boolean }) {
       {/* Reply content */}
       <View style={nr.card}>
         <View style={nr.authorRow}>
-          <GradAvatar handle={reply.author} size={26} />
+          <TouchableOpacity onPress={() => onAvatarPress(reply.author)} activeOpacity={0.7}>
+            <GradAvatar handle={reply.author} size={26} />
+          </TouchableOpacity>
           <Text style={nr.handle}>{reply.author}</Text>
           {reply.isOp && (
             <View style={nr.opBadge}>
@@ -606,7 +678,7 @@ const nr = StyleSheet.create({
 });
 
 // ─── CommentCard ──────────────────────────────────────────────────────────────
-function CommentCard({ comment, onReply }: { comment: Comment; onReply: (author: string) => void }) {
+function CommentCard({ comment, onReply, onAvatarPress }: { comment: Comment; onReply: (author: string) => void; onAvatarPress: (handle: string) => void }) {
   const [expanded, setExpanded] = useState(comment.replies.length > 0);
 
   return (
@@ -614,7 +686,9 @@ function CommentCard({ comment, onReply }: { comment: Comment; onReply: (author:
       <View style={cc.card}>
         {/* Author row */}
         <View style={cc.authorRow}>
-          <GradAvatar handle={comment.author} size={34} />
+          <TouchableOpacity onPress={() => onAvatarPress(comment.author)} activeOpacity={0.7}>
+            <GradAvatar handle={comment.author} size={34} />
+          </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={cc.handle}>{comment.author}</Text>
             <Text style={cc.time}>{comment.timestamp}</Text>
@@ -654,7 +728,7 @@ function CommentCard({ comment, onReply }: { comment: Comment; onReply: (author:
 
       {/* Nested replies */}
       {expanded && comment.replies.map((r, i) => (
-        <NestedReply key={r.id} reply={r} isLast={i === comment.replies.length - 1} />
+        <NestedReply key={r.id} reply={r} isLast={i === comment.replies.length - 1} onAvatarPress={onAvatarPress} />
       ))}
     </View>
   );
@@ -682,63 +756,8 @@ const cc = StyleSheet.create({
   actionText: { fontSize: 12, color: T.textMuted, fontWeight: '600' },
 });
 
-// ─── TypingIndicator ──────────────────────────────────────────────────────────
-function TypingIndicator() {
-  const dots = [
-    useRef(new Animated.Value(0.3)).current,
-    useRef(new Animated.Value(0.3)).current,
-    useRef(new Animated.Value(0.3)).current,
-  ];
-
-  useEffect(() => {
-    const anims = dots.map((anim, i) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(i * 150),
-          Animated.timing(anim, { toValue: 1, duration: 350, useNativeDriver: true }),
-          Animated.timing(anim, { toValue: 0.3, duration: 350, useNativeDriver: true }),
-        ])
-      )
-    );
-    anims.forEach(a => a.start());
-    return () => anims.forEach(a => a.stop());
-  }, []);
-
-  return (
-    <View style={ti.wrap}>
-      <View style={ti.pill}>
-        <GradAvatar handle="SomeoneNew" size={18} />
-        <Text style={ti.label}>2 people typing</Text>
-        <View style={{ flexDirection: 'row', gap: 3, alignItems: 'center' }}>
-          {dots.map((op, i) => (
-            <Animated.View
-              key={i}
-              style={{
-                width: 4, height: 4, borderRadius: 2,
-                backgroundColor: T.accentPurple, opacity: op,
-              }}
-            />
-          ))}
-        </View>
-      </View>
-    </View>
-  );
-}
-
-const ti = StyleSheet.create({
-  wrap: { alignItems: 'flex-start', paddingHorizontal: 2 },
-  pill: {
-    flexDirection: 'row', alignItems: 'center', gap: 7,
-    borderRadius: 99,
-    paddingHorizontal: 12, paddingVertical: 7,
-    backgroundColor: 'rgba(139,77,255,0.07)',
-    borderWidth: 1, borderColor: 'rgba(139,77,255,0.14)',
-  },
-  label: { fontSize: 12, color: T.accentPurple, fontWeight: '600' },
-});
-
 // ─── ReplyComposer ────────────────────────────────────────────────────────────
-function ReplyComposer({ replyingTo, onClear }: { replyingTo: string | null; onClear: () => void }) {
+function ReplyComposer({ replyingTo, onClear, onSend }: { replyingTo: string | null; onClear: () => void; onSend?: () => void }) {
   const [text, setText] = useState('');
   const [isAnonymous, setIsAnonymous] = useState(true);
 
@@ -843,6 +862,7 @@ function ReplyComposer({ replyingTo, onClear }: { replyingTo: string | null; onC
           <TouchableOpacity
             activeOpacity={text.trim() ? 0.8 : 1}
             style={[rp.sendOuter, !text.trim() && { opacity: 0.35 }]}
+            onPress={() => { if (text.trim()) { setText(''); onClear(); onSend?.(); } }}
           >
             <LinearGradient
               colors={gradColors}
@@ -961,18 +981,78 @@ const rp = StyleSheet.create({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function PostDetailScreen() {
   const router = useRouter();
+  const { id } = useLocalSearchParams<{ id: string }>();
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<SortOption>('top');
+  const [anonToast, setAnonToast] = useState<string | null>(null);
+  const [successToast, setSuccessToast] = useState(false);
+
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setLoading(false), 500);
+    return () => clearTimeout(t);
+  }, []);
+
+  const post = POST_MAP[id ?? ''];
+
+  const handleAvatarPress = useCallback((handle: string) => {
+    if (post && handle === post.author) {
+      setAnonToast(pickQuip());
+    } else {
+      router.push(`/profile/${handle}` as any);
+    }
+  }, [post]);
 
   // Find highlighted comments
   const hotComment = COMMENTS.find(c => c.isHot);
   const helpfulComment = COMMENTS.find(c => c.isHelpful);
   const regularComments = COMMENTS.filter(c => !c.isHot && !c.isHelpful);
 
+  if (loading) {
+    return (
+      <LinearGradient colors={BG} style={{ flex: 1 }}>
+        <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 8 }}>
+            <TouchableOpacity onPress={() => router.back()} style={s.navBtn}>
+              <Ionicons name="chevron-back" size={20} color={T.textSecondary} />
+            </TouchableOpacity>
+          </View>
+          <DetailHeaderSkeleton />
+          <SkeletonList count={3} type="row" />
+        </SafeAreaView>
+      </LinearGradient>
+    );
+  }
+
+  if (!post) {
+    return (
+      <LinearGradient colors={BG} style={{ flex: 1 }}>
+        <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 8 }}>
+            <TouchableOpacity onPress={() => router.back()} style={s.navBtn}>
+              <Ionicons name="chevron-back" size={20} color={T.textSecondary} />
+            </TouchableOpacity>
+          </View>
+          <EmptyState
+            icon="document-text-outline"
+            title="Post not found"
+            message="This post may have been removed or doesn't exist."
+            actionLabel="Back to Feed"
+            onAction={() => router.replace('/(tabs)/feed')}
+          />
+        </SafeAreaView>
+      </LinearGradient>
+    );
+  }
+
   return (
     <View style={s.root}>
       {/* Background gradient */}
       <LinearGradient colors={BG} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+
+      {anonToast && (
+        <AnonToast message={anonToast} onDone={() => setAnonToast(null)} />
+      )}
 
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <KeyboardAvoidingView
@@ -1002,13 +1082,13 @@ export default function PostDetailScreen() {
             keyboardShouldPersistTaps="handled"
           >
             {/* Original post hero */}
-            <PostHeroCard />
+            <PostHeroCard post={post} onAvatarPress={handleAvatarPress} />
 
             {/* Engagement context */}
-            <EngagementStrip />
+            <EngagementStrip post={post} />
 
             {/* Sort controls */}
-            <SortPills active={sortBy} onSelect={setSortBy} />
+            <SortPills active={sortBy} onSelect={setSortBy} post={post} />
 
             {/* Highlighted: Top reply */}
             {hotComment && (
@@ -1017,6 +1097,7 @@ export default function PostDetailScreen() {
                 label="TOP REPLY"
                 labelColor={T.accentPurple}
                 onReply={setReplyingTo}
+                onAvatarPress={handleAvatarPress}
               />
             )}
 
@@ -1027,24 +1108,23 @@ export default function PostDetailScreen() {
                 label="HELPFUL"
                 labelColor={T.green}
                 onReply={setReplyingTo}
+                onAvatarPress={handleAvatarPress}
               />
             )}
 
             {/* Regular comments */}
             {regularComments.map(comment => (
-              <CommentCard key={comment.id} comment={comment} onReply={setReplyingTo} />
+              <CommentCard key={comment.id} comment={comment} onReply={setReplyingTo} onAvatarPress={handleAvatarPress} />
             ))}
-
-            {/* Typing indicator */}
-            <TypingIndicator />
 
             <View style={{ height: 8 }} />
           </ScrollView>
 
           {/* ── Reply Composer ── */}
-          <ReplyComposer replyingTo={replyingTo} onClear={() => setReplyingTo(null)} />
+          <ReplyComposer replyingTo={replyingTo} onClear={() => setReplyingTo(null)} onSend={() => setSuccessToast(true)} />
         </KeyboardAvoidingView>
       </SafeAreaView>
+      <SuccessToast message="Reply posted" visible={successToast} onDone={() => setSuccessToast(false)} />
     </View>
   );
 }

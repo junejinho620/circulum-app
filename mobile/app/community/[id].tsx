@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
 } from 'react-native';
@@ -6,6 +6,9 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import EmptyState from '../../src/components/common/EmptyState';
+import { FeedCardSkeleton, SkeletonList } from '../../src/components/common/Skeletons';
+import SuccessToast from '../../src/components/common/SuccessToast';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const T = {
@@ -159,16 +162,6 @@ const COMMUNITY_MAP: Record<string, CommunityData> = {
     rules: ['Keep it funny', 'No offensive content', 'OC encouraged'],
     tags: ['memes', 'humor', 'relatable', 'campus-life'],
   },
-};
-
-// Default fallback
-const DEFAULT_COMMUNITY: CommunityData = {
-  id: 'default', name: 'Community', subtitle: 'A student community',
-  board: 'General', boardColor: '#4B50F8',
-  description: 'Welcome to this community.',
-  members: 100, activeNow: 5, postsToday: 2, scope: 'University-wide',
-  rules: ['Be respectful', 'No spam'],
-  tags: ['general'],
 };
 
 // ─── Mock posts ───────────────────────────────────────────────────────────────
@@ -579,9 +572,56 @@ export default function CommunityDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [joined, setJoined] = useState(false);
+  const [joinToast, setJoinToast] = useState(false);
   const [sort, setSort] = useState<FeedSort>('hot');
+  const [loading, setLoading] = useState(true);
 
-  const community = COMMUNITY_MAP[id || ''] || DEFAULT_COMMUNITY;
+  useEffect(() => {
+    const t = setTimeout(() => setLoading(false), 600);
+    return () => clearTimeout(t);
+  }, []);
+
+  const community = COMMUNITY_MAP[id ?? ''] ?? null;
+
+  if (loading) {
+    return (
+      <LinearGradient colors={BG} style={{ flex: 1 }}>
+        <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+          <View style={s.nav}>
+            <TouchableOpacity onPress={() => router.back()} activeOpacity={0.8} style={s.navBtn}>
+              <Ionicons name="chevron-back" size={18} color={T.textPrimary} />
+            </TouchableOpacity>
+            <Text style={s.navTitle}>Loading...</Text>
+            <View style={{ width: 38 }} />
+          </View>
+          <SkeletonList count={3} type="card" />
+        </SafeAreaView>
+      </LinearGradient>
+    );
+  }
+
+  if (!community) {
+    return (
+      <LinearGradient colors={BG} style={{ flex: 1 }}>
+        <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+          <View style={s.nav}>
+            <TouchableOpacity onPress={() => router.back()} activeOpacity={0.8} style={s.navBtn}>
+              <Ionicons name="chevron-back" size={18} color={T.textPrimary} />
+            </TouchableOpacity>
+            <View style={{ width: 38 }} />
+          </View>
+          <EmptyState
+            icon="chatbubbles-outline"
+            title="Community not found"
+            message="This community may have moved or doesn't exist."
+            actionLabel="Browse Communities"
+            onAction={() => router.replace('/(tabs)/communities')}
+          />
+        </SafeAreaView>
+      </LinearGradient>
+    );
+  }
+
   const posts = getPostsForCommunity(community.id);
 
   return (
@@ -605,7 +645,12 @@ export default function CommunityDetailScreen() {
 
         {/* Content */}
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
-          <CommunityHero community={community} joined={joined} onJoin={() => setJoined(v => !v)} />
+          <CommunityHero community={community} joined={joined} onJoin={() => {
+            setJoined(v => {
+              if (!v) setJoinToast(true);
+              return !v;
+            });
+          }} />
           <TagsStrip tags={community.tags} color={community.boardColor} />
 
           {/* Search */}
@@ -626,6 +671,7 @@ export default function CommunityDetailScreen() {
 
         <WriteFAB onPress={() => router.push('/(tabs)/create')} />
       </SafeAreaView>
+      <SuccessToast message="Joined community!" visible={joinToast} onDone={() => setJoinToast(false)} icon="people" />
     </View>
   );
 }

@@ -24,6 +24,13 @@ import { Message } from './database/entities/message.entity';
 import { Notification } from './database/entities/notification.entity';
 import { Report } from './database/entities/report.entity';
 import { ModerationAction } from './database/entities/moderation-action.entity';
+import { Poll } from './database/entities/poll.entity';
+import { PollOption } from './database/entities/poll-option.entity';
+import { PollVote } from './database/entities/poll-vote.entity';
+import { Bookmark } from './database/entities/bookmark.entity';
+import { UserBlock } from './database/entities/user-block.entity';
+import { Hashtag } from './database/entities/hashtag.entity';
+import { PostHashtag } from './database/entities/post-hashtag.entity';
 
 // Feature Modules
 import { AuthModule } from './modules/auth/auth.module';
@@ -37,6 +44,10 @@ import { FeedModule } from './modules/feed/feed.module';
 import { MessagesModule } from './modules/messages/messages.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ModerationModule } from './modules/moderation/moderation.module';
+import { PollsModule } from './modules/polls/polls.module';
+import { BookmarksModule } from './modules/bookmarks/bookmarks.module';
+import { BlocksModule } from './modules/blocks/blocks.module';
+import { HashtagsModule } from './modules/hashtags/hashtags.module';
 
 @Module({
   imports: [
@@ -58,6 +69,8 @@ import { ModerationModule } from './modules/moderation/moderation.module';
           Community, CommunityMember, Post, Comment, Vote,
           Conversation, ConversationParticipant, Message,
           Notification, Report, ModerationAction,
+          Poll, PollOption, PollVote,
+          Bookmark, UserBlock, Hashtag, PostHashtag,
         ],
         synchronize: config.get('app.nodeEnv') === 'development',
         logging: config.get('app.nodeEnv') === 'development',
@@ -82,6 +95,10 @@ import { ModerationModule } from './modules/moderation/moderation.module';
     MessagesModule,
     NotificationsModule,
     ModerationModule,
+    PollsModule,
+    BookmarksModule,
+    BlocksModule,
+    HashtagsModule,
   ],
 })
 export class AppModule {}

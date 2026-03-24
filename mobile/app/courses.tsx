@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  FlatList, Dimensions, Modal, Pressable, Animated,
+  FlatList, Dimensions, Modal, Pressable, Animated, RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -693,6 +693,12 @@ export default function CoursesScreen() {
   const [showPreview, setShowPreview] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 1200);
+  }, []);
+
   const trendingCourses = COURSES.filter((c) => c.trending);
   const birdCourses = COURSES.filter((c) => c.bird);
 
@@ -750,7 +756,14 @@ export default function CoursesScreen() {
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <Header onBack={() => router.back()} onMyCourses={() => {}} />
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={s.scroll}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#8B4DFF" colors={['#8B4DFF']} />
+          }
+        >
 
           {/* Trending */}
           <SectionHeader title="Trending Courses" icon="flame-outline" iconColor={T.accentBlue} onSeeAll={() => {}} />

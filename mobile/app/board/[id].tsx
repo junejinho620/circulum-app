@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
 } from 'react-native';
@@ -6,6 +6,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import EmptyState from '../../src/components/common/EmptyState';
+import { SkeletonList } from '../../src/components/common/Skeletons';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const T = {
@@ -371,12 +373,14 @@ const cl = StyleSheet.create({
 });
 
 // ─── RecentPostRow ────────────────────────────────────────────────────────────
-function RecentPostRow({ post, onPress }: { post: RecentPost; onPress: () => void }) {
+function RecentPostRow({ post, onPress, onAvatarPress }: { post: RecentPost; onPress: () => void; onAvatarPress: () => void }) {
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.85}>
       <View style={rp.card}>
         <View style={rp.row}>
-          <GradAvatar handle={post.author} size={28} />
+          <TouchableOpacity onPress={onAvatarPress} activeOpacity={0.7}>
+            <GradAvatar handle={post.author} size={28} />
+          </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <View style={rp.meta}>
               <View style={rp.communityPill}>
@@ -430,9 +434,62 @@ export default function BoardDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  const board = BOARD_MAP[id || '1'] || BOARD_MAP['1'];
-  const communities = BOARD_COMMUNITIES[id || '1'] || [];
-  const recentPosts = BOARD_RECENT_POSTS[id || ''] || [];
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setLoading(false), 600);
+    return () => clearTimeout(t);
+  }, []);
+
+  const board = BOARD_MAP[id ?? ''];
+  const communities = BOARD_COMMUNITIES[id ?? ''] || [];
+  const recentPosts = BOARD_RECENT_POSTS[id ?? ''] || [];
+
+  if (loading) {
+    return (
+      <View style={s.root}>
+        <LinearGradient colors={BG} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+        <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+          <View style={s.nav}>
+            <TouchableOpacity onPress={() => router.back()} activeOpacity={0.8} style={s.navBtn}>
+              <Ionicons name="chevron-back" size={18} color={T.textPrimary} />
+            </TouchableOpacity>
+            <View style={s.navCenter}>
+              <Text style={s.navTitle}>Loading…</Text>
+            </View>
+            <View style={{ width: 38 }} />
+          </View>
+          <View style={{ paddingHorizontal: 20, paddingTop: 16 }}>
+            <SkeletonList />
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  if (!board) {
+    return (
+      <View style={s.root}>
+        <LinearGradient colors={BG} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+        <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+          <View style={s.nav}>
+            <TouchableOpacity onPress={() => router.back()} activeOpacity={0.8} style={s.navBtn}>
+              <Ionicons name="chevron-back" size={18} color={T.textPrimary} />
+            </TouchableOpacity>
+            <View style={s.navCenter}>
+              <Text style={s.navTitle}>Board</Text>
+            </View>
+            <View style={{ width: 38 }} />
+          </View>
+          <EmptyState
+            title="Board not found"
+            message="This board doesn't exist or may have been removed."
+            actionLabel="Browse Boards"
+            onAction={() => router.replace('/(tabs)/communities' as any)}
+          />
+        </SafeAreaView>
+      </View>
+    );
+  }
 
   return (
     <View style={s.root}>
@@ -476,6 +533,7 @@ export default function BoardDetailScreen() {
                   key={post.id}
                   post={post}
                   onPress={() => router.push(`/post/${post.id}` as any)}
+                  onAvatarPress={() => router.push(`/profile/${post.author}` as any)}
                 />
               ))}
             </>

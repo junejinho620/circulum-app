@@ -13,10 +13,17 @@ import { api } from '../../src/services/api';
 import { useAuthStore } from '../../src/store/auth.store';
 import { socketService } from '../../src/services/socket';
 import LoadingSpinner from '../../src/components/common/LoadingSpinner';
+import EmptyState from '../../src/components/common/EmptyState';
+import ErrorState from '../../src/components/common/ErrorState';
 
 export default function ConversationScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+
+  if (!id) {
+    router.back();
+    return null;
+  }
   const { user } = useAuthStore();
   const [messageText, setMessageText] = useState('');
   const [sending, setSending] = useState(false);
@@ -27,7 +34,7 @@ export default function ConversationScreen() {
   const typingTimeout = useRef<any>(null);
 
   const {
-    data, isLoading, fetchNextPage, hasNextPage,
+    data, isLoading, error, refetch, fetchNextPage, hasNextPage,
   } = useMessages(id);
 
   const allMessages = data?.pages.flatMap((p) => p.items) ?? [];
@@ -124,6 +131,21 @@ export default function ConversationScreen() {
     );
   }, [user?.id, displayMessages]);
 
+  if (error) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: Colors.background }}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
+          </TouchableOpacity>
+          <Text style={styles.headerName}>Conversation</Text>
+          <View style={{ width: 22 }} />
+        </View>
+        <ErrorState message="Couldn't load messages" onRetry={() => refetch()} />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <KeyboardAvoidingView
@@ -191,8 +213,14 @@ export default function ConversationScreen() {
             data={displayMessages}
             keyExtractor={(item) => item.id}
             renderItem={renderMessage}
-            contentContainerStyle={styles.messageList}
+            contentContainerStyle={[styles.messageList, displayMessages.length === 0 && { flex: 1 }]}
             showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <View style={styles.emptyChat}>
+                <Ionicons name="chatbubble-ellipses-outline" size={48} color={Colors.textMuted} />
+                <Text style={styles.emptyChatText}>No messages yet. Say hello!</Text>
+              </View>
+            }
             onEndReached={() => hasNextPage && fetchNextPage()}
             onEndReachedThreshold={0.1}
             onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
@@ -373,4 +401,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sendBtnDisabled: { backgroundColor: Colors.surfaceElevated },
+  emptyChat: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+  },
+  emptyChatText: {
+    fontSize: Typography.sm,
+    color: Colors.textMuted,
+    marginTop: Spacing.xs,
+  },
 });

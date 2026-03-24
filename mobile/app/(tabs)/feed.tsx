@@ -1,11 +1,13 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Animated, Dimensions,
+  RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import EmptyState from '../../src/components/common/EmptyState';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -39,6 +41,62 @@ function avatarGrad(handle: string): [string, string] {
 
 // ─── Filter chips ─────────────────────────────────────────────────────────────
 const FILTERS = ['For You', 'Following', 'Trending', 'Classes', 'Events', 'Confessions'];
+
+// ─── Anonymous tap quips ─────────────────────────────────────────────────────
+const ANON_QUIPS = [
+  'Nice try! Identity sealed 🔒',
+  'Behind the mask… another mask 🎭',
+  'Anonymous and proud ✊',
+  'Some mysteries stay unsolved 🌑',
+  'The shadows keep my secrets 👤',
+  'You\'ll never know \u{1F60F}',
+];
+
+function pickQuip() {
+  return ANON_QUIPS[Math.floor(Math.random() * ANON_QUIPS.length)];
+}
+
+// ─── AnonToast ───────────────────────────────────────────────────────────────
+function AnonToast({ message, onDone }: { message: string; onDone: () => void }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const scale = useRef(new Animated.Value(0.85)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 140, friction: 8 }),
+      Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }),
+    ]).start();
+    const t = setTimeout(() => {
+      Animated.timing(opacity, { toValue: 0, duration: 350, useNativeDriver: true }).start(onDone);
+    }, 1800);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <Animated.View style={[at.wrap, { opacity, transform: [{ scale }] }]}>
+      <View style={at.card}>
+        <Ionicons name="finger-print-outline" size={20} color={T.accentPurple} />
+        <Text style={at.text}>{message}</Text>
+      </View>
+    </Animated.View>
+  );
+}
+
+const at = StyleSheet.create({
+  wrap: {
+    position: 'absolute', top: 100, left: 0, right: 0,
+    alignItems: 'center', zIndex: 999, pointerEvents: 'none',
+  },
+  card: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderRadius: 16, paddingHorizontal: 20, paddingVertical: 14,
+    borderWidth: 1, borderColor: 'rgba(139,77,255,0.2)',
+    shadowColor: '#8B4DFF', shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15, shadowRadius: 20, elevation: 8,
+  },
+  text: { fontSize: 14, fontWeight: '600', color: T.textPrimary },
+});
 
 // ─── Mock feed data ───────────────────────────────────────────────────────────
 type FeedItem = {
@@ -355,7 +413,7 @@ const fc = StyleSheet.create({
 
 // ─── Feed card components ─────────────────────────────────────────────────────
 
-function PostCard({ item, onPress }: { item: FeedItem; onPress: () => void }) {
+function PostCard({ item, onPress, onAvatarPress }: { item: FeedItem; onPress: () => void; onAvatarPress: () => void }) {
   const ag = avatarGrad(item.handle);
   return (
     <View style={fd.shadow}>
@@ -363,13 +421,15 @@ function PostCard({ item, onPress }: { item: FeedItem; onPress: () => void }) {
         <View style={fd.card}>
           {/* Author row */}
           <View style={fd.authorRow}>
-            <LinearGradient colors={ag} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={fd.avatar}>
-              {item.isAnonymous ? (
-                <Ionicons name="eye-off" size={14} color="rgba(255,255,255,0.9)" />
-              ) : (
-                <Text style={fd.avatarLetter}>{item.author[0]}</Text>
-              )}
-            </LinearGradient>
+            <TouchableOpacity onPress={onAvatarPress} activeOpacity={0.7}>
+              <LinearGradient colors={ag} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={fd.avatar}>
+                {item.isAnonymous ? (
+                  <Ionicons name="eye-off" size={14} color="rgba(255,255,255,0.9)" />
+                ) : (
+                  <Text style={fd.avatarLetter}>{item.author[0]}</Text>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
             <View style={{ flex: 1 }}>
               <Text style={fd.authorName}>{item.author}</Text>
               <View style={fd.authorMeta}>
@@ -411,7 +471,7 @@ function PostCard({ item, onPress }: { item: FeedItem; onPress: () => void }) {
   );
 }
 
-function PollCard({ item, onPress }: { item: FeedItem; onPress: () => void }) {
+function PollCard({ item, onPress, onAvatarPress }: { item: FeedItem; onPress: () => void; onAvatarPress: () => void }) {
   const ag = avatarGrad(item.handle);
   const totalVotes = item.pollOptions?.reduce((sum, o) => sum + o.votes, 0) ?? 1;
 
@@ -421,9 +481,11 @@ function PollCard({ item, onPress }: { item: FeedItem; onPress: () => void }) {
         <View style={fd.card}>
           {/* Author row */}
           <View style={fd.authorRow}>
-            <LinearGradient colors={ag} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={fd.avatar}>
-              <Text style={fd.avatarLetter}>{item.author[0]}</Text>
-            </LinearGradient>
+            <TouchableOpacity onPress={onAvatarPress} activeOpacity={0.7}>
+              <LinearGradient colors={ag} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={fd.avatar}>
+                <Text style={fd.avatarLetter}>{item.author[0]}</Text>
+              </LinearGradient>
+            </TouchableOpacity>
             <View style={{ flex: 1 }}>
               <Text style={fd.authorName}>{item.author}</Text>
               <View style={fd.authorMeta}>
@@ -645,18 +707,34 @@ const ms = StyleSheet.create({
 export default function HomeScreen() {
   const router = useRouter();
   const [filter, setFilter] = useState('For You');
+  const [anonToast, setAnonToast] = useState<string | null>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 1200);
+  }, []);
+
+  const handleAvatarPress = useCallback((item: FeedItem) => {
+    if (item.isAnonymous) {
+      setAnonToast(pickQuip());
+    } else {
+      router.push(`/profile/${item.handle}` as any);
+    }
+  }, []);
 
   const renderItem = useCallback(({ item }: { item: FeedItem }) => {
+    const avatarPress = () => handleAvatarPress(item);
     switch (item.type) {
       case 'poll':
-        return <PollCard item={item} onPress={() => router.push(`/post/${item.id}` as any)} />;
+        return <PollCard item={item} onPress={() => router.push(`/post/${item.id}` as any)} onAvatarPress={avatarPress} />;
       case 'event':
         return <EventCard item={item} onPress={() => router.push(`/post/${item.id}` as any)} />;
       case 'milestone':
         return <MilestoneCard item={item} />;
       default:
-        return <PostCard item={item} onPress={() => router.push(`/post/${item.id}` as any)} />;
+        return <PostCard item={item} onPress={() => router.push(`/post/${item.id}` as any)} onAvatarPress={avatarPress} />;
     }
   }, []);
 
@@ -671,6 +749,10 @@ export default function HomeScreen() {
   return (
     <View style={s.root}>
       <LinearGradient colors={BG} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+
+      {anonToast && (
+        <AnonToast message={anonToast} onDone={() => setAnonToast(null)} />
+      )}
 
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <Header onBell={() => router.push('/(tabs)/inbox')} />
@@ -688,6 +770,23 @@ export default function HomeScreen() {
             { useNativeDriver: true },
           )}
           scrollEventThrottle={16}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#8B4DFF"
+              colors={['#8B4DFF']}
+            />
+          }
+          ListEmptyComponent={
+            <EmptyState
+              icon="newspaper-outline"
+              title="Your feed is quiet"
+              message="Join communities and follow topics to see posts here."
+              actionLabel="Explore Communities"
+              onAction={() => router.push('/(tabs)/communities')}
+            />
+          }
         />
       </SafeAreaView>
     </View>

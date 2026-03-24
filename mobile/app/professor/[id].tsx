@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Pressable,
   TextInput, Dimensions,
@@ -7,6 +7,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { DetailHeaderSkeleton, SkeletonList } from '../../src/components/common/Skeletons';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -663,8 +664,33 @@ export default function ProfessorDetailScreen() {
   const [saved, setSaved] = useState(false);
   const [showWriteReview, setShowWriteReview] = useState(false);
   const [reviewSort, setReviewSort] = useState('Most Helpful');
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setLoading(false), 500);
+    return () => clearTimeout(t);
+  }, []);
 
   const prof = PROFS[id ?? '1'];
+
+  if (loading) {
+    return (
+      <View style={s.root}>
+        <LinearGradient colors={BG} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+        <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+          <View style={hdr.row}>
+            <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7} style={hdr.navBtn}>
+              <Ionicons name="chevron-back" size={20} color={T.textSecondary} />
+            </TouchableOpacity>
+          </View>
+          <View style={{ paddingHorizontal: 22, gap: 16, paddingTop: 4 }}>
+            <DetailHeaderSkeleton />
+            <SkeletonList count={3} />
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
   if (!prof) {
     return (
       <View style={s.root}>

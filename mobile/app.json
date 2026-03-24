@@ -26,7 +26,14 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#8B4DFF"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

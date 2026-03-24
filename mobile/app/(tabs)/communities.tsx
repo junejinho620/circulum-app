@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import EmptyState from '../../src/components/common/EmptyState';
+import { SkeletonList, ModuleGridSkeleton } from '../../src/components/common/Skeletons';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const T = {
@@ -36,7 +38,7 @@ const TRENDING_TOPICS = [
   { label: 'Study group', posts: 15, color: T.accentBlue },
 ];
 
-const DIR_TABS = ['Popular', 'New', 'Niche', 'Nearby'];
+const DIR_TABS = ['Popular', 'New', 'Suggested'];
 
 type Community = {
   id: string;
@@ -47,7 +49,7 @@ type Community = {
   newToday: number;
   icon: string;
   color: string;
-  tag: 'popular' | 'new' | 'niche' | 'nearby';
+  tag: 'popular' | 'new' | 'suggested';
 };
 
 const COMMUNITIES: Community[] = [
@@ -59,10 +61,10 @@ const COMMUNITIES: Community[] = [
   { id: '6', name: 'Social', description: 'Meet people, hangouts, clubs', members: '540', activeNow: 8, newToday: 4, icon: 'people-outline', color: '#3DAB73', tag: 'popular' },
   { id: '7', name: 'Mental Health', description: 'Support, resources, well-being', members: '320', activeNow: 6, newToday: 3, icon: 'heart-outline', color: '#C47EFF', tag: 'new' },
   { id: '8', name: 'Career & Co-op', description: 'Internships, co-op, job hunting', members: '410', activeNow: 9, newToday: 7, icon: 'briefcase-outline', color: '#4D97FF', tag: 'new' },
-  { id: '9', name: 'Photography Club', description: 'Campus through the lens', members: '180', activeNow: 3, newToday: 2, icon: 'camera-outline', color: '#F1973B', tag: 'niche' },
-  { id: '10', name: 'Board Games', description: 'Weekly game nights & meetups', members: '95', activeNow: 2, newToday: 1, icon: 'dice-outline', color: '#8B4DFF', tag: 'niche' },
-  { id: '11', name: 'St. George Local', description: 'Spots & deals near campus', members: '470', activeNow: 14, newToday: 5, icon: 'navigate-outline', color: '#3DAB73', tag: 'nearby' },
-  { id: '12', name: 'Kensington Market', description: 'Food, thrift, community', members: '210', activeNow: 4, newToday: 2, icon: 'storefront-outline', color: '#F1973B', tag: 'nearby' },
+  { id: '9', name: 'Photography Club', description: 'Campus through the lens', members: '180', activeNow: 3, newToday: 2, icon: 'camera-outline', color: '#F1973B', tag: 'suggested' },
+  { id: '10', name: 'Board Games', description: 'Weekly game nights & meetups', members: '95', activeNow: 2, newToday: 1, icon: 'dice-outline', color: '#8B4DFF', tag: 'suggested' },
+  { id: '11', name: 'St. George Local', description: 'Spots & deals near campus', members: '470', activeNow: 14, newToday: 5, icon: 'navigate-outline', color: '#3DAB73', tag: 'suggested' },
+  { id: '12', name: 'Kensington Market', description: 'Food, thrift, community', members: '210', activeNow: 4, newToday: 2, icon: 'storefront-outline', color: '#F1973B', tag: 'suggested' },
 ];
 
 type ModuleItem = {
@@ -71,6 +73,7 @@ type ModuleItem = {
   subtitle: string;
   icon: string;
   color: string;
+  comingSoon?: boolean;
 };
 
 const MODULES: ModuleItem[] = [
@@ -79,10 +82,10 @@ const MODULES: ModuleItem[] = [
   { id: 'professors', label: 'Prof Reviews', subtitle: 'Rate & read', icon: 'school-outline', color: '#8B4DFF' },
   { id: 'map', label: 'Campus Map', subtitle: 'Navigate', icon: 'map-outline', color: '#3DAB73' },
   { id: 'study-buddy', label: 'Study Buddy', subtitle: 'Find partners', icon: 'people-outline', color: '#C47EFF' },
-  { id: 'ai-assistant', label: 'AI Assistant', subtitle: 'Academic help', icon: 'sparkles-outline', color: '#7A64FF' },
   { id: 'polls', label: 'Polls', subtitle: 'Campus opinions', icon: 'stats-chart-outline', color: '#F1973B' },
-  { id: 'international', label: 'International', subtitle: 'Global hub', icon: 'globe-outline', color: '#4D97FF' },
-  { id: 'confession', label: 'Confessions', subtitle: 'Stay anonymous', icon: 'chatbox-ellipses-outline', color: '#E655C5' },
+  { id: 'international', label: 'International', subtitle: 'Global hub', icon: 'globe-outline', color: '#4D97FF', comingSoon: true },
+  { id: 'confession', label: 'Confessions', subtitle: 'Stay anonymous', icon: 'chatbox-ellipses-outline', color: '#E655C5', comingSoon: true },
+  { id: 'ai-assistant', label: 'AI Assistant', subtitle: 'Academic help', icon: 'sparkles-outline', color: '#7A64FF', comingSoon: true },
 ];
 
 type MissionItem = {
@@ -329,21 +332,36 @@ const cm = StyleSheet.create({
   newBadgeText: { fontSize: 10, fontWeight: '700', color: T.accentBlue },
 });
 
+// ─── Coming Soon module card ─────────────────────────────────────────────────
+function ComingSoonModuleCard({ mod }: { mod: ModuleItem }) {
+  return (
+    <View style={mg.cardWrap}>
+      <View style={[mg.card, mg.cardComingSoon]}>
+          <Text style={[mg.comingSoonText]}>COMING{'\n'}SOON</Text>
+        </View>
+      </View>
+  );
+}
+
 // ─── Modules grid ────────────────────────────────────────────────────────────
 function ModulesGrid({ onModulePress }: { onModulePress: (id: string) => void }) {
   return (
     <View style={mg.grid}>
-      {MODULES.map((mod) => (
-        <TouchableOpacity key={mod.id} activeOpacity={0.78} style={mg.cardWrap} onPress={() => onModulePress(mod.id)}>
-          <View style={mg.card}>
-            <View style={[mg.iconCircle, { backgroundColor: mod.color + '12' }]}>
-              <Ionicons name={mod.icon as any} size={20} color={mod.color} />
+      {MODULES.map((mod) =>
+        mod.comingSoon ? (
+          <ComingSoonModuleCard key={mod.id} mod={mod} />
+        ) : (
+          <TouchableOpacity key={mod.id} activeOpacity={0.78} style={mg.cardWrap} onPress={() => onModulePress(mod.id)}>
+            <View style={mg.card}>
+              <View style={[mg.iconCircle, { backgroundColor: mod.color + '12' }]}>
+                <Ionicons name={mod.icon as any} size={20} color={mod.color} />
+              </View>
+              <Text style={mg.label} numberOfLines={1}>{mod.label}</Text>
+              <Text style={mg.subtitle} numberOfLines={1}>{mod.subtitle}</Text>
             </View>
-            <Text style={mg.label} numberOfLines={1}>{mod.label}</Text>
-            <Text style={mg.subtitle} numberOfLines={1}>{mod.subtitle}</Text>
-          </View>
-        </TouchableOpacity>
-      ))}
+          </TouchableOpacity>
+        )
+      )}
     </View>
   );
 }
@@ -367,12 +385,20 @@ const mg = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', gap: 6,
     minHeight: 100,
   },
+  cardComingSoon: {
+    opacity: 0.72,
+    borderStyle: 'dashed',
+  },
   iconCircle: {
     width: 40, height: 40, borderRadius: 13,
     alignItems: 'center', justifyContent: 'center',
   },
   label: { fontSize: 12, fontWeight: '700', color: T.textSecondary, textAlign: 'center' },
   subtitle: { fontSize: 10, color: T.textMuted, textAlign: 'center' },
+  comingSoonText: {
+    fontSize: 10, fontWeight: '800', textAlign: 'center',
+    letterSpacing: 1.2, justifyContent: 'center',
+  },
 });
 
 // ─── Explore missions ────────────────────────────────────────────────────────
@@ -433,12 +459,23 @@ const mc = StyleSheet.create({
 export default function ExploreScreen() {
   const router = useRouter();
   const [dirTab, setDirTab] = useState('Popular');
+  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const t = setTimeout(() => setLoading(false), 500);
+    return () => clearTimeout(t);
+  }, []);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 1200);
+  }, []);
 
   const filteredCommunities = COMMUNITIES.filter((c) => {
     if (dirTab === 'Popular') return c.tag === 'popular';
     if (dirTab === 'New') return c.tag === 'new';
-    if (dirTab === 'Niche') return c.tag === 'niche';
-    if (dirTab === 'Nearby') return c.tag === 'nearby';
+    if (dirTab === 'Suggested') return c.tag === 'suggested';
     return true;
   });
 
@@ -458,45 +495,62 @@ export default function ExploreScreen() {
           </TouchableOpacity>
         </View>
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={s.scroll}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#8B4DFF" colors={['#8B4DFF']} />
+          }
+        >
 
           {/* Global search */}
           <GlobalSearch />
 
-          {/* Trending */}
-          <SectionHeader title="Trending Now" icon="flame-outline" iconColor={T.accentPink} />
-          <TrendingTopics />
+          {loading ? (
+            <>
+              <SkeletonList count={3} type="row" />
+              <ModuleGridSkeleton count={6} />
+              <SkeletonList count={2} type="row" />
+            </>
+          ) : (
+            <>
+              {/* Trending */}
+              <SectionHeader title="Trending Now" icon="flame-outline" iconColor={T.accentPink} />
+              <TrendingTopics />
 
-          {/* Communities directory */}
-          <SectionHeader title="Communities" icon="grid-outline" iconColor={T.accentBlue} onSeeAll={() => {}} />
-          <DirectoryTabs active={dirTab} onSelect={setDirTab} />
-          <View style={{ gap: 0 }}>
-            {filteredCommunities.map((c) => (
-              <CommunityCard
-                key={c.id}
-                community={c}
-                onPress={() => router.push(`/board/${c.id}` as any)}
-              />
-            ))}
-          </View>
+              {/* Communities directory */}
+              <SectionHeader title="Communities" icon="grid-outline" iconColor={T.accentBlue} onSeeAll={() => {}} />
+              <DirectoryTabs active={dirTab} onSelect={setDirTab} />
+              <View style={{ gap: 0 }}>
+                {filteredCommunities.map((c) => (
+                  <CommunityCard
+                    key={c.id}
+                    community={c}
+                    onPress={() => router.push(`/board/${c.id}` as any)}
+                  />
+                ))}
+              </View>
 
-          {/* Modules hub */}
-          <SectionHeader title="Tools & Modules" icon="apps-outline" iconColor={T.accentPurple} />
-          <ModulesGrid onModulePress={(id) => {
-            if (id === 'timetable') router.push('/timetable' as any);
-            if (id === 'catalog') router.push('/courses' as any);
-            if (id === 'professors') router.push('/professors' as any);
-            if (id === 'study-buddy') router.push('/study-buddy' as any);
-            if (id === 'map') router.push('/campus-map' as any);
-          }} />
+              {/* Modules hub */}
+              <SectionHeader title="Tools & Modules" icon="apps-outline" iconColor={T.accentPurple} />
+              <ModulesGrid onModulePress={(id) => {
+                if (id === 'timetable') router.push('/timetable' as any);
+                if (id === 'catalog') router.push('/courses' as any);
+                if (id === 'professors') router.push('/professors' as any);
+                if (id === 'study-buddy') router.push('/study-buddy' as any);
+                if (id === 'map') router.push('/campus-map' as any);
+                if (id === 'polls') router.push('/polls' as any);
+              }} />
 
-          {/* Suggested actions */}
-          <SectionHeader title="Suggested for You" icon="sparkles-outline" iconColor={T.accentBlue} />
-          <View style={{ gap: 0 }}>
-            {MISSIONS.map((m) => (
-              <MissionCard key={m.id} mission={m} />
-            ))}
-          </View>
+              {/* Suggested actions */}
+              <SectionHeader title="Suggested for You" icon="sparkles-outline" iconColor={T.accentBlue} />
+              <View style={{ gap: 0 }}>
+                {MISSIONS.map((m) => (
+                  <MissionCard key={m.id} mission={m} />
+                ))}
+              </View>
+            </>
+          )}
 
           <View style={{ height: 40 }} />
         </ScrollView>
