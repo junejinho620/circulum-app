@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  Modal, Pressable,
+  Modal, Pressable, ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useProfessors, ProfessorDetail } from '../src/services/queries';
+import { useDebouncedValue } from '../src/hooks/useDebouncedValue';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const T = {
@@ -32,8 +34,8 @@ function ratingColor(r: number) {
   return '#E05555';
 }
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
-export type Professor = {
+// ─── Map API shape to UI shape ───────────────────────────────────────────────
+type Professor = {
   id: string;
   name: string;
   department: string;
@@ -48,80 +50,22 @@ export type Professor = {
   tags: string[];
 };
 
-export const PROFESSORS: Professor[] = [
-  {
-    id: '1', name: 'Prof. Daniel Horton', department: 'Computer Science',
-    courses: ['CSC263', 'CSC373'], overall: 4.6, clarity: 4.8, fairness: 4.3, workload: 3.5, engagement: 4.7,
-    reviewCount: 189, trending: true,
-    tags: ['Clear explanations', 'Tough exams', 'Helpful office hours'],
-  },
-  {
-    id: '2', name: 'Prof. Jennifer Liu', department: 'Computer Science',
-    courses: ['CSC108', 'CSC148'], overall: 4.5, clarity: 4.7, fairness: 4.5, workload: 3.0, engagement: 4.4,
-    reviewCount: 312,
-    tags: ['Beginner friendly', 'Well organized', 'Slides-based'],
-  },
-  {
-    id: '3', name: 'Prof. Michael Selick', department: 'Mathematics',
-    courses: ['MAT237', 'MAT337'], overall: 3.2, clarity: 2.8, fairness: 3.0, workload: 4.8, engagement: 3.5,
-    reviewCount: 145, trending: true,
-    tags: ['Proof-heavy', 'Fast-paced', 'Challenging but rewarding'],
-  },
-  {
-    id: '4', name: 'Prof. Anita Bhatt', department: 'Psychology',
-    courses: ['PSY100', 'PSY201'], overall: 4.7, clarity: 4.6, fairness: 4.8, workload: 2.5, engagement: 4.9,
-    reviewCount: 524,
-    tags: ['Very interactive', 'Funny lectures', 'Fair grading'],
-  },
-  {
-    id: '5', name: 'Prof. Sarah Brenner', department: 'Statistics',
-    courses: ['STA257', 'STA261'], overall: 3.5, clarity: 3.3, fairness: 3.6, workload: 4.0, engagement: 3.2,
-    reviewCount: 198,
-    tags: ['Exam-heavy', 'Derivation focused', 'Office hours essential'],
-  },
-  {
-    id: '6', name: 'Prof. Alexander Guerzhoy', department: 'Computer Science',
-    courses: ['CSC108', 'CSC180'], overall: 4.3, clarity: 4.5, fairness: 4.2, workload: 3.2, engagement: 4.1,
-    reviewCount: 276,
-    tags: ['Practical examples', 'Assignments well-designed', 'Approachable'],
-  },
-  {
-    id: '7', name: 'Prof. Wei Chen', department: 'History',
-    courses: ['HIS101', 'HIS201'], overall: 4.1, clarity: 4.0, fairness: 4.3, workload: 3.5, engagement: 3.8,
-    reviewCount: 145,
-    tags: ['Essay-heavy', 'Engaging storyteller', 'Tutorial participation matters'],
-  },
-  {
-    id: '8', name: 'Prof. James Gazzale', department: 'Economics',
-    courses: ['ECO101', 'ECO200'], overall: 4.0, clarity: 4.2, fairness: 3.8, workload: 3.3, engagement: 3.9,
-    reviewCount: 210,
-    tags: ['Graph-heavy', 'Textbook mirrors exams', 'Curved generously'],
-  },
-  {
-    id: '9', name: 'Prof. John Cami', department: 'Astronomy',
-    courses: ['AST101', 'AST201'], overall: 4.6, clarity: 4.8, fairness: 4.7, workload: 2.2, engagement: 4.5,
-    reviewCount: 380,
-    tags: ['Bird course legend', 'iClicker marks', 'Planetarium sessions'],
-  },
-  {
-    id: '10', name: 'Prof. David Calver', department: 'Computer Science',
-    courses: ['CSC148', 'CSC207'], overall: 4.2, clarity: 4.4, fairness: 4.0, workload: 3.8, engagement: 4.3,
-    reviewCount: 295,
-    tags: ['Recursion king', 'Debugger advocate', 'Tricky edge cases'],
-  },
-  {
-    id: '11', name: 'Prof. Lisa Morrison', department: 'Philosophy',
-    courses: ['PHL101', 'PHL200'], overall: 4.3, clarity: 4.1, fairness: 4.4, workload: 3.0, engagement: 4.2,
-    reviewCount: 210,
-    tags: ['Argument-focused', 'TA feedback crucial', 'Socratic style'],
-  },
-  {
-    id: '12', name: 'Prof. Thomas Baumgart', department: 'Computer Science',
-    courses: ['CSC263', 'CSC369'], overall: 3.8, clarity: 3.6, fairness: 3.9, workload: 4.2, engagement: 3.7,
-    reviewCount: 167,
-    tags: ['Exam-heavy', 'Past exams are gold', 'Amortized analysis expert'],
-  },
-];
+function mapProfessor(p: ProfessorDetail): Professor {
+  return {
+    id: p.id,
+    name: p.name,
+    department: p.department,
+    courses: p.courses,
+    overall: p.avgOverall,
+    clarity: p.avgClarity,
+    fairness: p.avgFairness,
+    workload: p.avgWorkload,
+    engagement: p.avgEngagement,
+    reviewCount: p.reviewCount,
+    trending: p.isTrending,
+    tags: p.tags,
+  };
+}
 
 const DEPT_CHIPS = ['All', 'Computer Science', 'Mathematics', 'Statistics', 'Psychology', 'Economics', 'History', 'Astronomy', 'Philosophy'];
 const SORT_OPTIONS = ['Highest Rated', 'Most Reviewed', 'Trending', 'Lowest Workload'];
@@ -193,7 +137,7 @@ function SearchBar({
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={sb.suggName} numberOfLines={1}>{p.name}</Text>
-                <Text style={sb.suggDept}>{p.department} · {p.courses.join(', ')}</Text>
+                <Text style={sb.suggDept}>{p.department} · {(p.courses ?? []).join(', ')}</Text>
               </View>
               <View style={[sb.suggRating, { backgroundColor: ratingColor(p.overall) + '15' }]}>
                 <Text style={[sb.suggRatingText, { color: ratingColor(p.overall) }]}>{p.overall.toFixed(1)}</Text>
@@ -396,7 +340,7 @@ function ProfessorCard({ prof, onPress }: { prof: Professor; onPress: () => void
           <View style={{ flex: 1 }}>
             <Text style={pc.name} numberOfLines={1}>{prof.name}</Text>
             <Text style={pc.dept}>{prof.department}</Text>
-            <Text style={pc.courses} numberOfLines={1}>{prof.courses.join(' · ')}</Text>
+            <Text style={pc.courses} numberOfLines={1}>{(prof.courses ?? []).join(' · ')}</Text>
           </View>
           <View style={pc.ratingCol}>
             <View style={[pc.ratingBadge, { backgroundColor: ratingColor(prof.overall) + '12' }]}>
@@ -429,7 +373,7 @@ function ProfessorCard({ prof, onPress }: { prof: Professor; onPress: () => void
           )}
           <View style={{ flex: 1 }} />
           <View style={pc.tagRow}>
-            {prof.tags.slice(0, 2).map((tag, i) => (
+            {(prof.tags ?? []).slice(0, 2).map((tag, i) => (
               <View key={i} style={pc.tag}>
                 <Text style={pc.tagText}>{tag}</Text>
               </View>
@@ -509,7 +453,7 @@ function QuickPreviewModal({ prof, visible, onClose, onFullProfile }: {
           </View>
 
           <View style={qp.coursesRow}>
-            {prof.courses.map((c) => (
+            {(prof.courses ?? []).map((c) => (
               <View key={c} style={qp.coursePill}>
                 <Text style={qp.courseText}>{c}</Text>
               </View>
@@ -524,7 +468,7 @@ function QuickPreviewModal({ prof, visible, onClose, onFullProfile }: {
           </View>
 
           <View style={qp.tagsRow}>
-            {prof.tags.map((tag, i) => (
+            {(prof.tags ?? []).map((tag, i) => (
               <View key={i} style={qp.tag}>
                 <Text style={qp.tagText}>{tag}</Text>
               </View>
@@ -591,25 +535,47 @@ export default function ProfessorsScreen() {
   const [previewProf, setPreviewProf] = useState<Professor | null>(null);
   const [showPreview, setShowPreview] = useState(false);
 
+  const selectedDept = deptFilter === 'All' ? undefined : deptFilter;
+  const selectedSort = sortBy;
+  const debouncedSearch = useDebouncedValue(search.trim(), 400);
+  const searchQuery = debouncedSearch.length >= 2 ? debouncedSearch : undefined;
+  const { data: professors, isLoading, refetch } = useProfessors(selectedDept, selectedSort, searchQuery);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refetch();
+    setRefreshing(false);
+  }, [refetch]);
+
+  // Map API data to UI shape
+  const mappedProfessors = useMemo(
+    () => (professors ?? []).map(mapProfessor),
+    [professors],
+  );
+
   const suggestions = search.length > 0
-    ? PROFESSORS.filter((p) => {
+    ? mappedProfessors.filter((p) => {
         const q = search.toLowerCase();
         return p.name.toLowerCase().includes(q) ||
           p.department.toLowerCase().includes(q) ||
-          p.courses.some((c) => c.toLowerCase().includes(q));
+          (p.courses ?? []).some((c) => c.toLowerCase().includes(q));
       })
     : [];
 
-  const filteredProfs = PROFESSORS
-    .filter((p) => {
-      if (deptFilter !== 'All' && p.department !== deptFilter) return false;
-      if (search.length > 0) {
-        const q = search.toLowerCase();
-        return p.name.toLowerCase().includes(q) || p.courses.some((c) => c.toLowerCase().includes(q));
-      }
-      return true;
-    })
-    .sort((a, b) => {
+  const filteredProfs = useMemo(() => {
+    let list = mappedProfessors;
+
+    if (search.length > 0) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          (p.courses ?? []).some((c) => c.toLowerCase().includes(q)),
+      );
+    }
+
+    return [...list].sort((a, b) => {
       switch (sortBy) {
         case 'Most Reviewed': return b.reviewCount - a.reviewCount;
         case 'Trending': return (b.trending ? 1 : 0) - (a.trending ? 1 : 0) || b.reviewCount - a.reviewCount;
@@ -617,6 +583,7 @@ export default function ProfessorsScreen() {
         default: return b.overall - a.overall;
       }
     });
+  }, [mappedProfessors, search, sortBy]);
 
   const openProfile = (id: string) => {
     setSearch('');
@@ -630,7 +597,14 @@ export default function ProfessorsScreen() {
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <Header onBack={() => router.back()} onMyProfs={() => {}} />
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={s.scroll}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={T.accentPurple} />
+          }
+        >
 
           {/* Search */}
           <SearchBar
@@ -647,13 +621,33 @@ export default function ProfessorsScreen() {
           {/* Sort */}
           <SortDropdown active={sortBy} onSelect={setSortBy} />
 
+          {/* Loading state */}
+          {isLoading && (
+            <View style={s.loadingWrap}>
+              <ActivityIndicator size="large" color={T.accentPurple} />
+              <Text style={s.loadingText}>Loading professors...</Text>
+            </View>
+          )}
+
           {/* Professor List */}
-          <SectionHeader title="Professors" icon="school-outline" iconColor={T.accentPurple} />
-          <View style={{ gap: 0 }}>
-            {filteredProfs.map((p) => (
-              <ProfessorCard key={p.id} prof={p} onPress={() => openProfile(p.id)} />
-            ))}
-          </View>
+          {!isLoading && (
+            <>
+              <SectionHeader title="Professors" icon="school-outline" iconColor={T.accentPurple} />
+              <View style={{ gap: 0 }}>
+                {filteredProfs.map((p) => (
+                  <ProfessorCard key={p.id} prof={p} onPress={() => openProfile(p.id)} />
+                ))}
+              </View>
+
+              {filteredProfs.length === 0 && (
+                <View style={s.emptyWrap}>
+                  <Ionicons name="search-outline" size={36} color={T.textMuted} />
+                  <Text style={s.emptyTitle}>No professors found</Text>
+                  <Text style={s.emptySubtitle}>Try adjusting your filters or search term</Text>
+                </View>
+              )}
+            </>
+          )}
 
           <View style={{ height: 40 }} />
         </ScrollView>
@@ -675,4 +669,13 @@ export default function ProfessorsScreen() {
 const s = StyleSheet.create({
   root: { flex: 1 },
   scroll: { paddingTop: 4, paddingBottom: 32, gap: 16 },
+  loadingWrap: {
+    alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 12,
+  },
+  loadingText: { fontSize: 14, fontWeight: '600', color: T.textMuted },
+  emptyWrap: {
+    alignItems: 'center', justifyContent: 'center', paddingVertical: 48, gap: 8,
+  },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: T.textPrimary },
+  emptySubtitle: { fontSize: 13, color: T.textMuted, textAlign: 'center' },
 });

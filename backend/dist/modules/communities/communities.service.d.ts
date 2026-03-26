@@ -6,7 +6,7 @@ export declare class CommunitiesService {
     private memberRepo;
     private dataSource;
     constructor(communityRepo: Repository<Community>, memberRepo: Repository<CommunityMember>, dataSource: DataSource);
-    findAll(universityId: string, type?: CommunityType): Promise<Community[]>;
+    findAll(universityId: string, type?: CommunityType, limit?: number): Promise<Community[]>;
     findOne(id: string): Promise<Community>;
     findBySlug(slug: string, universityId: string): Promise<Community>;
     getMyMemberships(userId: string, universityId: string): Promise<CommunityMember[]>;

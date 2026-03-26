@@ -12,13 +12,31 @@ export class Course {
   id: string;
 
   @Column({ length: 20 })
-  code: string; // e.g. "CS101"
+  code: string;
 
   @Column({ length: 300 })
-  name: string; // e.g. "Introduction to Computer Science"
+  name: string;
 
   @Column({ length: 100, nullable: true })
   department: string;
+
+  @Column({ type: 'text', nullable: true })
+  description: string;
+
+  @Column({ type: 'simple-array', nullable: true })
+  terms: string[]; // ['Fall', 'Winter', 'Summer']
+
+  @Column({ type: 'float', default: 0 })
+  avgRating: number;
+
+  @Column({ type: 'float', default: 0 })
+  avgDifficulty: number;
+
+  @Column({ type: 'float', default: 0 })
+  avgWorkload: number;
+
+  @Column({ default: 0 })
+  reviewCount: number;
 
   @ManyToOne(() => University, (u) => u.courses)
   @JoinColumn({ name: 'universityId' })

@@ -1,12 +1,20 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  Modal, Pressable, Dimensions, Animated, PanResponder,
+  Modal, Pressable, Dimensions, Animated, PanResponder, ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import {
+  useCampusLocations,
+  useCampusEvents,
+  useSavedPlaces,
+  useToggleSavedPlace,
+  CampusLocationItem,
+  CampusEventItem,
+} from '../src/services/queries';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -38,7 +46,7 @@ const CATEGORIES: { id: CategoryId; label: string; icon: string; color: string }
   { id: 'popular', label: 'Popular', icon: 'flame-outline', color: '#E05555' },
 ];
 
-// ─── Location data ────────────────────────────────────────────────────────────
+// ─── UI location shape (mapped from API) ─────────────────────────────────────
 type CampusLocation = {
   id: string;
   name: string;
@@ -54,94 +62,7 @@ type CampusLocation = {
   tags?: string[];
 };
 
-const LOCATIONS: CampusLocation[] = [
-  {
-    id: '1', name: 'Bahen Centre', subtitle: 'CS & Engineering Hub',
-    category: 'lectures', building: 'BA', floor: 'Floors 1-8',
-    studentsNow: 342, bestTime: 'Before 10am', rating: 4.2,
-    coordinates: { x: 0.45, y: 0.35 },
-    tags: ['CS lectures', 'Labs', 'Study rooms'],
-  },
-  {
-    id: '2', name: 'Robarts Library', subtitle: 'Main campus library',
-    category: 'study', building: 'Robarts', floor: 'Floors 1-14',
-    studentsNow: 891, bestTime: 'Weekday mornings', rating: 4.5,
-    coordinates: { x: 0.32, y: 0.28 },
-    tags: ['Silent zones', 'Group rooms', 'Cafeteria'],
-  },
-  {
-    id: '3', name: 'Sid Smith Café', subtitle: 'Best espresso on campus',
-    category: 'food', building: 'Sidney Smith Hall',
-    studentsNow: 48, bestTime: '2-4pm (no lines)', rating: 4.7,
-    coordinates: { x: 0.55, y: 0.42 },
-    tags: ['Coffee', 'Pastries', 'Quick bites'],
-  },
-  {
-    id: '4', name: 'Hart House', subtitle: 'Culture & community centre',
-    category: 'popular', building: 'Hart House',
-    studentsNow: 156, bestTime: 'Lunch hour', rating: 4.8,
-    coordinates: { x: 0.38, y: 0.52 },
-    tags: ['Events', 'Gallery', 'Gym', 'Dining'],
-  },
-  {
-    id: '5', name: 'Convocation Hall', subtitle: 'Iconic lecture theatre',
-    category: 'lectures', building: 'Con Hall', floor: 'Main floor',
-    studentsNow: 720, bestTime: 'Outside class hours', rating: 4.0,
-    coordinates: { x: 0.42, y: 0.58 },
-    tags: ['Large lectures', 'Ceremonies'],
-  },
-  {
-    id: '6', name: 'Gerstein Library', subtitle: 'Science & medicine library',
-    category: 'quiet', building: 'Gerstein', floor: 'Floors 1-4',
-    studentsNow: 234, bestTime: 'After 6pm', rating: 4.6,
-    coordinates: { x: 0.58, y: 0.32 },
-    tags: ['Silent study', 'Medical resources', 'Quiet'],
-  },
-  {
-    id: '7', name: 'Med Sci Building', subtitle: 'Medical Sciences auditorium',
-    category: 'lectures', building: 'MSB', floor: 'Floors 1-6',
-    studentsNow: 189, bestTime: 'Midday gap', rating: 3.9,
-    coordinates: { x: 0.62, y: 0.45 },
-    tags: ['Bio lectures', 'Labs'],
-  },
-  {
-    id: '8', name: "King's College Circle", subtitle: 'Iconic campus green',
-    category: 'popular', building: 'Outdoor',
-    studentsNow: 67, bestTime: 'Sunny afternoons', rating: 4.9,
-    coordinates: { x: 0.40, y: 0.48 },
-    tags: ['Photos', 'Relaxation', 'Events'],
-  },
-  {
-    id: '9', name: 'Exam Centre', subtitle: 'Central exam facility',
-    category: 'lectures', building: 'Exam Centre', floor: 'Main & Upper',
-    studentsNow: 0, bestTime: 'Exam season', rating: 3.4,
-    coordinates: { x: 0.25, y: 0.60 },
-    tags: ['Exams', 'Large capacity'],
-  },
-  {
-    id: '10', name: 'Earth Sciences Café', subtitle: 'Hidden gem for lunch',
-    category: 'food', building: 'Earth Sciences Centre',
-    studentsNow: 31, bestTime: '11am-1pm', rating: 4.4,
-    coordinates: { x: 0.68, y: 0.38 },
-    tags: ['Lunch specials', 'Quiet seating'],
-  },
-  {
-    id: '11', name: 'Trinity College Quad', subtitle: 'Beautiful quiet study area',
-    category: 'quiet', building: 'Trinity College',
-    studentsNow: 14, bestTime: 'Anytime', rating: 4.8,
-    coordinates: { x: 0.28, y: 0.42 },
-    tags: ['Historic', 'Outdoor study', 'Peaceful'],
-  },
-  {
-    id: '12', name: 'Graham Library', subtitle: 'Trinity College library',
-    category: 'study', building: 'Trinity College', floor: 'Main floor',
-    studentsNow: 42, bestTime: 'Mornings', rating: 4.7,
-    coordinates: { x: 0.26, y: 0.44 },
-    tags: ['Historic', 'Beautiful interior', 'Quiet'],
-  },
-];
-
-// ─── Campus events ────────────────────────────────────────────────────────────
+// ─── UI event shape (mapped from API) ─────────────────────────────────────────
 type CampusEvent = {
   id: string;
   title: string;
@@ -153,40 +74,59 @@ type CampusEvent = {
   color: string;
 };
 
-const EVENTS: CampusEvent[] = [
-  {
-    id: 'e1', title: 'CS Career Fair', locationId: '1',
-    startTime: '2:00 PM', startsIn: '1h 23m', participants: 340,
-    category: 'Career', color: T.accentBlue,
-  },
-  {
-    id: 'e2', title: 'Jazz Night', locationId: '4',
-    startTime: '7:00 PM', startsIn: '6h 23m', participants: 85,
-    category: 'Social', color: T.accentPink,
-  },
-  {
-    id: 'e3', title: 'Midterm Review — MAT237', locationId: '5',
-    startTime: '4:30 PM', startsIn: '3h 53m', participants: 210,
-    category: 'Academic', color: T.accentPurple,
-  },
-  {
-    id: 'e4', title: 'Free Pizza Friday', locationId: '3',
-    startTime: '12:00 PM', startsIn: '25m', participants: 128,
-    category: 'Food', color: T.accentOrange,
-  },
-];
+// ─── Helpers to map API data to UI shapes ─────────────────────────────────────
+const EVENT_COLOR_MAP: Record<string, string> = {
+  Career: T.accentBlue,
+  Social: T.accentPink,
+  Academic: T.accentPurple,
+  Food: T.accentOrange,
+};
 
-// ─── Saved places ─────────────────────────────────────────────────────────────
-type SavedPlace = { id: string; locationId: string; type: 'favorite' | 'frequent' | 'recent' };
+function mapLocationToUI(item: CampusLocationItem): CampusLocation {
+  return {
+    id: item.id,
+    name: item.name,
+    subtitle: item.subtitle ?? '',
+    category: item.category as CategoryId,
+    floor: item.floor,
+    building: item.building,
+    studentsNow: item.currentOccupancy,
+    bestTime: item.bestTime ?? 'Anytime',
+    rating: item.avgRating,
+    coordinates: { x: item.coordX, y: item.coordY },
+    tags: item.tags,
+  };
+}
 
-const SAVED_PLACES: SavedPlace[] = [
-  { id: 's1', locationId: '2', type: 'favorite' },
-  { id: 's2', locationId: '6', type: 'favorite' },
-  { id: 's3', locationId: '1', type: 'frequent' },
-  { id: 's4', locationId: '3', type: 'frequent' },
-  { id: 's5', locationId: '5', type: 'recent' },
-  { id: 's6', locationId: '4', type: 'recent' },
-];
+function formatStartsIn(startTime: string): string {
+  const now = new Date();
+  const start = new Date(startTime);
+  const diffMs = start.getTime() - now.getTime();
+  if (diffMs <= 0) return 'Now';
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 60) return `${diffMin}m`;
+  const h = Math.floor(diffMin / 60);
+  const m = diffMin % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+function formatTime(isoString: string): string {
+  const d = new Date(isoString);
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function mapEventToUI(item: CampusEventItem): CampusEvent {
+  return {
+    id: item.id,
+    title: item.title,
+    locationId: item.locationId,
+    startTime: formatTime(item.startTime),
+    startsIn: formatStartsIn(item.startTime),
+    participants: item.participantCount,
+    category: item.category,
+    color: EVENT_COLOR_MAP[item.category] ?? T.accentBlue,
+  };
+}
 
 // ─── Category icon map ────────────────────────────────────────────────────────
 const CATEGORY_ICON: Record<CategoryId, { icon: string; color: string; bg: string }> = {
@@ -838,17 +778,19 @@ const ls = StyleSheet.create({
 
 // ─── Saved Places Panel ───────────────────────────────────────────────────────
 function SavedPanel({
-  visible, onToggle, onSelect,
+  visible, onToggle, onSelect, savedPlaces, locations,
 }: {
   visible: boolean; onToggle: () => void; onSelect: (loc: CampusLocation) => void;
+  savedPlaces: { id: string; locationId: string; type: string }[];
+  locations: CampusLocation[];
 }) {
   const grouped = {
-    favorite: SAVED_PLACES.filter((s) => s.type === 'favorite'),
-    frequent: SAVED_PLACES.filter((s) => s.type === 'frequent'),
-    recent: SAVED_PLACES.filter((s) => s.type === 'recent'),
+    favorite: savedPlaces.filter((s) => s.type === 'favorite'),
+    frequent: savedPlaces.filter((s) => s.type === 'frequent'),
+    recent: savedPlaces.filter((s) => s.type === 'recent'),
   };
 
-  const getLocation = (id: string) => LOCATIONS.find((l) => l.id === id)!;
+  const getLocation = (id: string) => locations.find((l) => l.id === id);
 
   return (
     <View style={[sp.panel, !visible && sp.panelCollapsed]}>
@@ -861,52 +803,73 @@ function SavedPanel({
       {visible && (
         <ScrollView showsVerticalScrollIndicator={false} style={sp.list}>
           {/* Favorites */}
-          <Text style={sp.groupLabel}>Favorites</Text>
-          {grouped.favorite.map((s) => {
-            const loc = getLocation(s.locationId);
-            const cat = CATEGORY_ICON[loc.category];
-            return (
-              <TouchableOpacity key={s.id} activeOpacity={0.7} style={sp.item} onPress={() => onSelect(loc)}>
-                <View style={[sp.itemIcon, { backgroundColor: cat.bg }]}>
-                  <Ionicons name={cat.icon as any} size={12} color={cat.color} />
-                </View>
-                <Text style={sp.itemName} numberOfLines={1}>{loc.name}</Text>
-                <Ionicons name="heart" size={12} color={T.accentPink} />
-              </TouchableOpacity>
-            );
-          })}
+          {grouped.favorite.length > 0 && (
+            <>
+              <Text style={sp.groupLabel}>Favorites</Text>
+              {grouped.favorite.map((s) => {
+                const loc = getLocation(s.locationId);
+                if (!loc) return null;
+                const cat = CATEGORY_ICON[loc.category];
+                return (
+                  <TouchableOpacity key={s.id} activeOpacity={0.7} style={sp.item} onPress={() => onSelect(loc)}>
+                    <View style={[sp.itemIcon, { backgroundColor: cat.bg }]}>
+                      <Ionicons name={cat.icon as any} size={12} color={cat.color} />
+                    </View>
+                    <Text style={sp.itemName} numberOfLines={1}>{loc.name}</Text>
+                    <Ionicons name="heart" size={12} color={T.accentPink} />
+                  </TouchableOpacity>
+                );
+              })}
+            </>
+          )}
 
           {/* Frequent */}
-          <Text style={sp.groupLabel}>Frequently Visited</Text>
-          {grouped.frequent.map((s) => {
-            const loc = getLocation(s.locationId);
-            const cat = CATEGORY_ICON[loc.category];
-            return (
-              <TouchableOpacity key={s.id} activeOpacity={0.7} style={sp.item} onPress={() => onSelect(loc)}>
-                <View style={[sp.itemIcon, { backgroundColor: cat.bg }]}>
-                  <Ionicons name={cat.icon as any} size={12} color={cat.color} />
-                </View>
-                <Text style={sp.itemName} numberOfLines={1}>{loc.name}</Text>
-                <Ionicons name="trending-up" size={12} color={T.accentGreen} />
-              </TouchableOpacity>
-            );
-          })}
+          {grouped.frequent.length > 0 && (
+            <>
+              <Text style={sp.groupLabel}>Frequently Visited</Text>
+              {grouped.frequent.map((s) => {
+                const loc = getLocation(s.locationId);
+                if (!loc) return null;
+                const cat = CATEGORY_ICON[loc.category];
+                return (
+                  <TouchableOpacity key={s.id} activeOpacity={0.7} style={sp.item} onPress={() => onSelect(loc)}>
+                    <View style={[sp.itemIcon, { backgroundColor: cat.bg }]}>
+                      <Ionicons name={cat.icon as any} size={12} color={cat.color} />
+                    </View>
+                    <Text style={sp.itemName} numberOfLines={1}>{loc.name}</Text>
+                    <Ionicons name="trending-up" size={12} color={T.accentGreen} />
+                  </TouchableOpacity>
+                );
+              })}
+            </>
+          )}
 
           {/* Recent */}
-          <Text style={sp.groupLabel}>Recent</Text>
-          {grouped.recent.map((s) => {
-            const loc = getLocation(s.locationId);
-            const cat = CATEGORY_ICON[loc.category];
-            return (
-              <TouchableOpacity key={s.id} activeOpacity={0.7} style={sp.item} onPress={() => onSelect(loc)}>
-                <View style={[sp.itemIcon, { backgroundColor: cat.bg }]}>
-                  <Ionicons name={cat.icon as any} size={12} color={cat.color} />
-                </View>
-                <Text style={sp.itemName} numberOfLines={1}>{loc.name}</Text>
-                <Ionicons name="time-outline" size={12} color={T.textMuted} />
-              </TouchableOpacity>
-            );
-          })}
+          {grouped.recent.length > 0 && (
+            <>
+              <Text style={sp.groupLabel}>Recent</Text>
+              {grouped.recent.map((s) => {
+                const loc = getLocation(s.locationId);
+                if (!loc) return null;
+                const cat = CATEGORY_ICON[loc.category];
+                return (
+                  <TouchableOpacity key={s.id} activeOpacity={0.7} style={sp.item} onPress={() => onSelect(loc)}>
+                    <View style={[sp.itemIcon, { backgroundColor: cat.bg }]}>
+                      <Ionicons name={cat.icon as any} size={12} color={cat.color} />
+                    </View>
+                    <Text style={sp.itemName} numberOfLines={1}>{loc.name}</Text>
+                    <Ionicons name="time-outline" size={12} color={T.textMuted} />
+                  </TouchableOpacity>
+                );
+              })}
+            </>
+          )}
+
+          {savedPlaces.length === 0 && (
+            <Text style={{ fontSize: 12, color: T.textMuted, textAlign: 'center', paddingVertical: 16 }}>
+              No saved places yet
+            </Text>
+          )}
         </ScrollView>
       )}
     </View>
@@ -950,12 +913,12 @@ const sp = StyleSheet.create({
 
 // ─── Event Detail Card ────────────────────────────────────────────────────────
 function EventCard({
-  event, onClose,
+  event, onClose, locations,
 }: {
-  event: CampusEvent | null; onClose: () => void;
+  event: CampusEvent | null; onClose: () => void; locations: CampusLocation[];
 }) {
   if (!event) return null;
-  const loc = LOCATIONS.find((l) => l.id === event.locationId);
+  const loc = locations.find((l) => l.id === event.locationId);
 
   return (
     <View style={ec.card}>
@@ -1063,6 +1026,34 @@ const ui = StyleSheet.create({
   },
 });
 
+// ─── Loading overlay ──────────────────────────────────────────────────────────
+function LoadingOverlay() {
+  return (
+    <View style={loadStyles.overlay}>
+      <View style={loadStyles.card}>
+        <ActivityIndicator size="large" color={T.accentBlue} />
+        <Text style={loadStyles.text}>Loading campus map...</Text>
+      </View>
+    </View>
+  );
+}
+
+const loadStyles = StyleSheet.create({
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center', justifyContent: 'center',
+    zIndex: 50,
+  },
+  card: {
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderRadius: 20, paddingHorizontal: 32, paddingVertical: 28,
+    alignItems: 'center', gap: 14,
+    shadowColor: '#5B608C', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15, shadowRadius: 16, elevation: 8,
+  },
+  text: { fontSize: 14, fontWeight: '600', color: T.textSecondary },
+});
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function CampusMapScreen() {
   const router = useRouter();
@@ -1073,8 +1064,48 @@ export default function CampusMapScreen() {
   const [savedPanelOpen, setSavedPanelOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<CampusEvent | null>(null);
 
+  // ─── API hooks ──────────────────────────────────────────────────────────────
+  const { data: locationsData, isLoading } = useCampusLocations(activeCategory ?? undefined);
+  const { data: eventsData } = useCampusEvents();
+  const { data: savedPlacesData } = useSavedPlaces();
+  const toggleSaved = useToggleSavedPlace();
+
+  // ─── Map API data to UI shapes ──────────────────────────────────────────────
+  const locations: CampusLocation[] = useMemo(
+    () => (locationsData ?? []).map(mapLocationToUI),
+    [locationsData],
+  );
+
+  const events: CampusEvent[] = useMemo(
+    () => (eventsData ?? []).map(mapEventToUI),
+    [eventsData],
+  );
+
+  const savedPlaces = useMemo(
+    () => (savedPlacesData ?? []).map((sp) => ({
+      id: sp.id,
+      locationId: sp.locationId,
+      type: sp.type,
+    })),
+    [savedPlacesData],
+  );
+
+  // Build a full locations list for saved panel lookups (includes locations from
+  // saved places that might not be in the current filtered set)
+  const allLocationsForLookup: CampusLocation[] = useMemo(() => {
+    const map = new Map<string, CampusLocation>();
+    for (const loc of locations) map.set(loc.id, loc);
+    // Also include locations embedded in saved places
+    for (const sp of savedPlacesData ?? []) {
+      if (sp.location && !map.has(sp.location.id)) {
+        map.set(sp.location.id, mapLocationToUI(sp.location));
+      }
+    }
+    return Array.from(map.values());
+  }, [locations, savedPlacesData]);
+
   const searchSuggestions = searchQuery.length > 0
-    ? LOCATIONS.filter((l) =>
+    ? allLocationsForLookup.filter((l) =>
         l.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         l.building.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (l.tags || []).some((t) => t.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -1103,17 +1134,26 @@ export default function CampusMapScreen() {
     setSelectedLocation(loc);
   }, []);
 
+  const handleSaveLocation = useCallback(() => {
+    if (selectedLocation) {
+      toggleSaved.mutate(selectedLocation.id);
+    }
+  }, [selectedLocation, toggleSaved]);
+
   return (
     <View style={s.root}>
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <View style={{ flex: 1 }}>
+          {/* Loading overlay */}
+          {isLoading && <LoadingOverlay />}
+
           {/* Full-screen map canvas */}
           <MapCanvas
             activeCategory={activeCategory}
-            pins={LOCATIONS}
+            pins={locations}
             onPinPress={handlePinPress}
             selectedPin={selectedLocation?.id ?? null}
-            events={EVENTS}
+            events={events}
             onEventPress={handleEventPress}
           />
 
@@ -1154,7 +1194,7 @@ export default function CampusMapScreen() {
 
           {/* Event detail card */}
           {selectedEvent && !selectedLocation && (
-            <EventCard event={selectedEvent} onClose={() => setSelectedEvent(null)} />
+            <EventCard event={selectedEvent} onClose={() => setSelectedEvent(null)} locations={allLocationsForLookup} />
           )}
 
           {/* Saved places panel */}
@@ -1163,6 +1203,8 @@ export default function CampusMapScreen() {
               visible={savedPanelOpen}
               onToggle={() => setSavedPanelOpen(!savedPanelOpen)}
               onSelect={handleSavedSelect}
+              savedPlaces={savedPlaces}
+              locations={allLocationsForLookup}
             />
           )}
 
@@ -1172,7 +1214,7 @@ export default function CampusMapScreen() {
               location={selectedLocation}
               onClose={() => setSelectedLocation(null)}
               onNavigate={() => {}}
-              onSave={() => {}}
+              onSave={handleSaveLocation}
               onShare={() => {}}
             />
           )}

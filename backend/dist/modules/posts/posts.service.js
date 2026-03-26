@@ -21,13 +21,15 @@ const community_entity_1 = require("../../database/entities/community.entity");
 const user_entity_1 = require("../../database/entities/user.entity");
 const community_member_entity_1 = require("../../database/entities/community-member.entity");
 const vote_entity_1 = require("../../database/entities/vote.entity");
+const hashtags_service_1 = require("../hashtags/hashtags.service");
 let PostsService = class PostsService {
-    constructor(postRepo, communityRepo, memberRepo, voteRepo, dataSource) {
+    constructor(postRepo, communityRepo, memberRepo, voteRepo, dataSource, hashtagsService) {
         this.postRepo = postRepo;
         this.communityRepo = communityRepo;
         this.memberRepo = memberRepo;
         this.voteRepo = voteRepo;
         this.dataSource = dataSource;
+        this.hashtagsService = hashtagsService;
     }
     async create(dto, author) {
         const community = await this.communityRepo.findOne({
@@ -49,6 +51,8 @@ let PostsService = class PostsService {
             .set({ postCount: () => '"postCount" + 1' })
             .where('id = :id', { id: author.id })
             .execute();
+        const text = `${dto.title} ${dto.body || ''}`;
+        this.hashtagsService.processPostHashtags(saved.id, text).catch(() => { });
         return saved;
     }
     async findById(id, requestingUserId) {
@@ -143,6 +147,7 @@ let PostsService = class PostsService {
         if (post.authorId !== userId)
             throw new common_1.ForbiddenException('Not authorized');
         await this.postRepo.update(id, { status: post_entity_1.PostStatus.REMOVED });
+        this.hashtagsService.removePostHashtags(id).catch(() => { });
     }
     async recalculateHotScores() {
         const posts = await this.postRepo.find({
@@ -194,6 +199,7 @@ exports.PostsService = PostsService = __decorate([
         typeorm_2.Repository,
         typeorm_2.Repository,
         typeorm_2.Repository,
-        typeorm_2.DataSource])
+        typeorm_2.DataSource,
+        hashtags_service_1.HashtagsService])
 ], PostsService);
 //# sourceMappingURL=posts.service.js.map

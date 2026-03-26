@@ -31,6 +31,15 @@ import { Bookmark } from './database/entities/bookmark.entity';
 import { UserBlock } from './database/entities/user-block.entity';
 import { Hashtag } from './database/entities/hashtag.entity';
 import { PostHashtag } from './database/entities/post-hashtag.entity';
+import { CourseReview } from './database/entities/course-review.entity';
+import { Professor } from './database/entities/professor.entity';
+import { ProfessorReview } from './database/entities/professor-review.entity';
+import { StudyBuddyProfile } from './database/entities/study-buddy-profile.entity';
+import { StudySession } from './database/entities/study-session.entity';
+import { StudySessionParticipant } from './database/entities/study-session-participant.entity';
+import { CampusLocation } from './database/entities/campus-location.entity';
+import { CampusEvent } from './database/entities/campus-event.entity';
+import { SavedPlace } from './database/entities/saved-place.entity';
 
 // Feature Modules
 import { AuthModule } from './modules/auth/auth.module';
@@ -48,6 +57,13 @@ import { PollsModule } from './modules/polls/polls.module';
 import { BookmarksModule } from './modules/bookmarks/bookmarks.module';
 import { BlocksModule } from './modules/blocks/blocks.module';
 import { HashtagsModule } from './modules/hashtags/hashtags.module';
+import { HealthModule } from './modules/health/health.module';
+import { CourseReviewsModule } from './modules/course-reviews/course-reviews.module';
+import { ProfessorsModule } from './modules/professors/professors.module';
+import { StudyBuddyModule } from './modules/study-buddy/study-buddy.module';
+import { CampusMapModule } from './modules/campus-map/campus-map.module';
+import { TimetableModule } from './modules/timetable/timetable.module';
+import { ScheduleBlock } from './database/entities/schedule-block.entity';
 
 @Module({
   imports: [
@@ -71,6 +87,10 @@ import { HashtagsModule } from './modules/hashtags/hashtags.module';
           Notification, Report, ModerationAction,
           Poll, PollOption, PollVote,
           Bookmark, UserBlock, Hashtag, PostHashtag,
+          CourseReview, Professor, ProfessorReview,
+          StudyBuddyProfile, StudySession, StudySessionParticipant,
+          CampusLocation, CampusEvent, SavedPlace,
+          ScheduleBlock,
         ],
         synchronize: config.get('app.nodeEnv') === 'development',
         logging: config.get('app.nodeEnv') === 'development',
@@ -99,6 +119,12 @@ import { HashtagsModule } from './modules/hashtags/hashtags.module';
     BookmarksModule,
     BlocksModule,
     HashtagsModule,
+    HealthModule,
+    CourseReviewsModule,
+    ProfessorsModule,
+    StudyBuddyModule,
+    CampusMapModule,
+    TimetableModule,
   ],
 })
 export class AppModule {}

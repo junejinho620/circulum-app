@@ -5,6 +5,7 @@ import { User } from '../../database/entities/user.entity';
 import { CommunityMember } from '../../database/entities/community-member.entity';
 import { Vote } from '../../database/entities/vote.entity';
 import { CreatePostDto } from './dto/create-post.dto';
+import { HashtagsService } from '../hashtags/hashtags.service';
 export type FeedSort = 'hot' | 'new' | 'top';
 export declare class PostsService {
     private postRepo;
@@ -12,7 +13,8 @@ export declare class PostsService {
     private memberRepo;
     private voteRepo;
     private dataSource;
-    constructor(postRepo: Repository<Post>, communityRepo: Repository<Community>, memberRepo: Repository<CommunityMember>, voteRepo: Repository<Vote>, dataSource: DataSource);
+    private hashtagsService;
+    constructor(postRepo: Repository<Post>, communityRepo: Repository<Community>, memberRepo: Repository<CommunityMember>, voteRepo: Repository<Vote>, dataSource: DataSource, hashtagsService: HashtagsService);
     create(dto: CreatePostDto, author: User): Promise<Post>;
     findById(id: string, requestingUserId?: string): Promise<Post & {
         userVote?: number;

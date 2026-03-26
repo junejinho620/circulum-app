@@ -33,6 +33,30 @@ __decorate([
     __metadata("design:type", String)
 ], Course.prototype, "department", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ type: 'text', nullable: true }),
+    __metadata("design:type", String)
+], Course.prototype, "description", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'simple-array', nullable: true }),
+    __metadata("design:type", Array)
+], Course.prototype, "terms", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'float', default: 0 }),
+    __metadata("design:type", Number)
+], Course.prototype, "avgRating", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'float', default: 0 }),
+    __metadata("design:type", Number)
+], Course.prototype, "avgDifficulty", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'float', default: 0 }),
+    __metadata("design:type", Number)
+], Course.prototype, "avgWorkload", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ default: 0 }),
+    __metadata("design:type", Number)
+], Course.prototype, "reviewCount", void 0);
+__decorate([
     (0, typeorm_1.ManyToOne)(() => university_entity_1.University, (u) => u.courses),
     (0, typeorm_1.JoinColumn)({ name: 'universityId' }),
     __metadata("design:type", university_entity_1.University)

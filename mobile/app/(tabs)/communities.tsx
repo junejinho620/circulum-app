@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, RefreshControl,
 } from 'react-native';
@@ -8,6 +8,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import EmptyState from '../../src/components/common/EmptyState';
 import { SkeletonList, ModuleGridSkeleton } from '../../src/components/common/Skeletons';
+import { useCommunities, useTrendingHashtags } from '../../src/services/queries';
+import type { Community as APICommunity, Hashtag } from '../../src/services/queries';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const T = {
@@ -28,44 +30,23 @@ const AVATAR_GRADS: [string, string][] = [
   ['#E655C5', '#C47EFF'], ['#C47EFF', '#6B7CFF'],
 ];
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
-const TRENDING_TOPICS = [
-  { label: 'Exam curve', posts: 34, color: T.accentBlue },
-  { label: 'Roommate search', posts: 21, color: T.accentPurple },
-  { label: 'Internship deadlines', posts: 18, color: T.accentBlue },
-  { label: 'Party tonight', posts: 28, color: T.accentPink },
-  { label: 'Grade appeal', posts: 12, color: T.accentPurple },
-  { label: 'Study group', posts: 15, color: T.accentBlue },
-];
+// ─── Color palette for communities & hashtags ─────────────────────────────────
+const COMMUNITY_COLORS = ['#4B50F8', '#E655C5', '#6B7CFF', '#8B4DFF', '#F1973B', '#3DAB73', '#C47EFF', '#4D97FF'];
+const COMMUNITY_ICONS: Record<string, string> = {
+  campus: 'school-outline',
+  course: 'library-outline',
+  major: 'ribbon-outline',
+  custom: 'people-outline',
+};
+const HASHTAG_COLORS = [T.accentBlue, T.accentPurple, T.accentBlue, T.accentPink, T.accentPurple, T.accentBlue];
 
 const DIR_TABS = ['Popular', 'New', 'Suggested'];
 
-type Community = {
-  id: string;
-  name: string;
-  description: string;
-  members: string;
-  activeNow: number;
-  newToday: number;
-  icon: string;
-  color: string;
-  tag: 'popular' | 'new' | 'suggested';
-};
-
-const COMMUNITIES: Community[] = [
-  { id: '1', name: 'Classes', description: 'Course discussions, notes, exam help', members: '1.2k', activeNow: 34, newToday: 12, icon: 'school-outline', color: '#4B50F8', tag: 'popular' },
-  { id: '2', name: 'Confessions', description: 'Anonymous campus confessions', members: '1.8k', activeNow: 42, newToday: 23, icon: 'eye-off-outline', color: '#E655C5', tag: 'popular' },
-  { id: '3', name: 'Housing', description: 'Roommates, sublets, dorm life', members: '890', activeNow: 12, newToday: 5, icon: 'home-outline', color: '#6B7CFF', tag: 'popular' },
-  { id: '4', name: 'Events', description: 'Campus events, meetups, parties', members: '650', activeNow: 28, newToday: 8, icon: 'calendar-outline', color: '#8B4DFF', tag: 'popular' },
-  { id: '5', name: 'Marketplace', description: 'Buy, sell, trade on campus', members: '720', activeNow: 15, newToday: 6, icon: 'pricetag-outline', color: '#F1973B', tag: 'popular' },
-  { id: '6', name: 'Social', description: 'Meet people, hangouts, clubs', members: '540', activeNow: 8, newToday: 4, icon: 'people-outline', color: '#3DAB73', tag: 'popular' },
-  { id: '7', name: 'Mental Health', description: 'Support, resources, well-being', members: '320', activeNow: 6, newToday: 3, icon: 'heart-outline', color: '#C47EFF', tag: 'new' },
-  { id: '8', name: 'Career & Co-op', description: 'Internships, co-op, job hunting', members: '410', activeNow: 9, newToday: 7, icon: 'briefcase-outline', color: '#4D97FF', tag: 'new' },
-  { id: '9', name: 'Photography Club', description: 'Campus through the lens', members: '180', activeNow: 3, newToday: 2, icon: 'camera-outline', color: '#F1973B', tag: 'suggested' },
-  { id: '10', name: 'Board Games', description: 'Weekly game nights & meetups', members: '95', activeNow: 2, newToday: 1, icon: 'dice-outline', color: '#8B4DFF', tag: 'suggested' },
-  { id: '11', name: 'St. George Local', description: 'Spots & deals near campus', members: '470', activeNow: 14, newToday: 5, icon: 'navigate-outline', color: '#3DAB73', tag: 'suggested' },
-  { id: '12', name: 'Kensington Market', description: 'Food, thrift, community', members: '210', activeNow: 4, newToday: 2, icon: 'storefront-outline', color: '#F1973B', tag: 'suggested' },
-];
+// ─── Helper: format member count ──────────────────────────────────────────────
+function formatCount(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  return String(n);
+}
 
 type ModuleItem = {
   id: string;
@@ -179,17 +160,20 @@ const sh = StyleSheet.create({
 });
 
 // ─── Trending topics ─────────────────────────────────────────────────────────
-function TrendingTopics() {
+function TrendingTopics({ hashtags }: { hashtags: Hashtag[] }) {
   return (
     <View style={tt.shadow}>
       <View style={tt.card}>
         <View style={tt.chips}>
-          {TRENDING_TOPICS.map((topic) => (
-            <TouchableOpacity key={topic.label} activeOpacity={0.75} style={[tt.chip, { backgroundColor: topic.color + '0C', borderColor: topic.color + '20' }]}>
-              <Text style={[tt.chipLabel, { color: topic.color }]}># {topic.label}</Text>
-              <Text style={tt.chipCount}>{topic.posts}</Text>
-            </TouchableOpacity>
-          ))}
+          {hashtags.map((topic, idx) => {
+            const color = HASHTAG_COLORS[idx % HASHTAG_COLORS.length];
+            return (
+              <TouchableOpacity key={topic.id} activeOpacity={0.75} style={[tt.chip, { backgroundColor: color + '0C', borderColor: color + '20' }]}>
+                <Text style={[tt.chipLabel, { color }]}># {topic.name}</Text>
+                <Text style={tt.chipCount}>{topic.usageCount}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </View>
     </View>
@@ -260,18 +244,21 @@ const dt = StyleSheet.create({
   },
 });
 
-// ─── Community card ──────────────────────────────────────────────────────────
-function CommunityCard({ community, onPress }: { community: Community; onPress: () => void }) {
+// ─── Community card (adapted for API shape) ──────────────────────────────────
+function CommunityCard({ community, index, onPress }: { community: APICommunity; index: number; onPress: () => void }) {
+  const color = COMMUNITY_COLORS[index % COMMUNITY_COLORS.length];
+  const icon = COMMUNITY_ICONS[community.type] ?? 'people-outline';
+
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.86} style={cm.shadow}>
       <View style={cm.card}>
         <View style={cm.topRow}>
-          <View style={[cm.iconWrap, { backgroundColor: community.color + '12' }]}>
-            <Ionicons name={community.icon as any} size={20} color={community.color} />
+          <View style={[cm.iconWrap, { backgroundColor: color + '12' }]}>
+            <Ionicons name={icon as any} size={20} color={color} />
           </View>
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={cm.name}>{community.name}</Text>
-            <Text style={cm.desc}>{community.description}</Text>
+            <Text style={cm.desc}>{community.description ?? community.slug}</Text>
           </View>
           <Ionicons name="chevron-forward" size={15} color={T.textMuted} />
         </View>
@@ -283,14 +270,9 @@ function CommunityCard({ community, onPress }: { community: Community; onPress: 
               </View>
             ))}
           </View>
-          <Text style={cm.members}>{community.members}</Text>
+          <Text style={cm.members}>{formatCount(community.memberCount)}</Text>
           <View style={cm.activeDot} />
-          <Text style={cm.activeText}>{community.activeNow} active</Text>
-          {community.newToday > 0 && (
-            <View style={cm.newBadge}>
-              <Text style={cm.newBadgeText}>{community.newToday} new</Text>
-            </View>
-          )}
+          <Text style={cm.activeText}>{community.postCount} posts</Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -333,7 +315,7 @@ const cm = StyleSheet.create({
 });
 
 // ─── Coming Soon module card ─────────────────────────────────────────────────
-function ComingSoonModuleCard({ mod }: { mod: ModuleItem }) {
+function ComingSoonModuleCard({ mod: _mod }: { mod: ModuleItem }) {
   return (
     <View style={mg.cardWrap}>
       <View style={[mg.card, mg.cardComingSoon]}>
@@ -459,25 +441,51 @@ const mc = StyleSheet.create({
 export default function ExploreScreen() {
   const router = useRouter();
   const [dirTab, setDirTab] = useState('Popular');
+
+  // ─── API data ─────────────────────────────────────────────────────────────
+  const {
+    data: communities,
+    isLoading: communitiesLoading,
+    refetch: refetchCommunities,
+  } = useCommunities();
+
+  const {
+    data: trendingHashtags,
+    isLoading: hashtagsLoading,
+    refetch: refetchHashtags,
+  } = useTrendingHashtags(10);
+
+  const loading = communitiesLoading || hashtagsLoading;
   const [refreshing, setRefreshing] = useState(false);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 500);
-    return () => clearTimeout(t);
-  }, []);
-
-  const onRefresh = useCallback(() => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1200);
-  }, []);
+    await Promise.all([
+      refetchCommunities(),
+      refetchHashtags(),
+    ]);
+    setRefreshing(false);
+  }, [refetchCommunities, refetchHashtags]);
 
-  const filteredCommunities = COMMUNITIES.filter((c) => {
-    if (dirTab === 'Popular') return c.tag === 'popular';
-    if (dirTab === 'New') return c.tag === 'new';
-    if (dirTab === 'Suggested') return c.tag === 'suggested';
-    return true;
-  });
+  // ─── Filter communities by tab ────────────────────────────────────────────
+  // The API returns a flat list with a `type` field. Map tab labels to type filters.
+  const allCommunities = communities ?? [];
+
+  const filteredCommunities = (() => {
+    if (dirTab === 'Popular') {
+      // Sort by memberCount descending — most members = popular
+      return [...allCommunities].sort((a, b) => b.memberCount - a.memberCount);
+    }
+    if (dirTab === 'New') {
+      // Show communities with fewest posts (newest / least established)
+      return [...allCommunities].sort((a, b) => a.postCount - b.postCount);
+    }
+    if (dirTab === 'Suggested') {
+      // Show custom / campus communities as suggestions
+      return allCommunities.filter((c) => c.type === 'custom' || c.type === 'campus');
+    }
+    return allCommunities;
+  })();
 
   return (
     <View style={s.root}>
@@ -516,19 +524,36 @@ export default function ExploreScreen() {
             <>
               {/* Trending */}
               <SectionHeader title="Trending Now" icon="flame-outline" iconColor={T.accentPink} />
-              <TrendingTopics />
+              {trendingHashtags && trendingHashtags.length > 0 ? (
+                <TrendingTopics hashtags={trendingHashtags} />
+              ) : (
+                <EmptyState
+                  icon="flame-outline"
+                  title="No trending topics yet"
+                  message="Check back soon for what's hot on campus"
+                />
+              )}
 
               {/* Communities directory */}
               <SectionHeader title="Communities" icon="grid-outline" iconColor={T.accentBlue} onSeeAll={() => {}} />
               <DirectoryTabs active={dirTab} onSelect={setDirTab} />
               <View style={{ gap: 0 }}>
-                {filteredCommunities.map((c) => (
-                  <CommunityCard
-                    key={c.id}
-                    community={c}
-                    onPress={() => router.push(`/board/${c.id}` as any)}
+                {filteredCommunities.length > 0 ? (
+                  filteredCommunities.map((c, idx) => (
+                    <CommunityCard
+                      key={c.id}
+                      community={c}
+                      index={idx}
+                      onPress={() => router.push(`/board/${c.id}` as any)}
+                    />
+                  ))
+                ) : (
+                  <EmptyState
+                    icon="people-outline"
+                    title="No communities found"
+                    message="Try a different tab or create your own community"
                   />
-                ))}
+                )}
               </View>
 
               {/* Modules hub */}

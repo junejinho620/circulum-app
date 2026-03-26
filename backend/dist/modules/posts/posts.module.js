@@ -16,6 +16,7 @@ const vote_entity_1 = require("../../database/entities/vote.entity");
 const posts_service_1 = require("./posts.service");
 const posts_controller_1 = require("./posts.controller");
 const feed_module_1 = require("../feed/feed.module");
+const hashtags_module_1 = require("../hashtags/hashtags.module");
 let PostsModule = class PostsModule {
 };
 exports.PostsModule = PostsModule;
@@ -24,6 +25,7 @@ exports.PostsModule = PostsModule = __decorate([
         imports: [
             typeorm_1.TypeOrmModule.forFeature([post_entity_1.Post, community_entity_1.Community, community_member_entity_1.CommunityMember, vote_entity_1.Vote]),
             feed_module_1.FeedModule,
+            hashtags_module_1.HashtagsModule,
         ],
         controllers: [posts_controller_1.PostsController],
         providers: [posts_service_1.PostsService],

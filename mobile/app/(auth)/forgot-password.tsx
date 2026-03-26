@@ -7,11 +7,13 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useForgotPassword } from '../../src/services/queries';
 
 const C = {
   textPrimary:   '#111111',
@@ -27,10 +29,21 @@ export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [focused, setFocused] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const forgotPassword = useForgotPassword();
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!email.trim()) return;
-    setSent(true);
+    setLoading(true);
+    try {
+      await forgotPassword.mutateAsync(email.trim());
+      setSent(true);
+    } catch (err: any) {
+      // Always show success to prevent email enumeration
+      setSent(true);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -90,6 +103,7 @@ export default function ForgotPasswordScreen() {
                   <TouchableOpacity
                     onPress={handleSubmit}
                     activeOpacity={0.85}
+                    disabled={loading}
                     style={styles.ctaShadow}
                   >
                     <LinearGradient
@@ -98,7 +112,7 @@ export default function ForgotPasswordScreen() {
                       end={{ x: 1, y: 0 }}
                       style={styles.ctaButton}
                     >
-                      <Text style={styles.ctaText}>Send Reset Link</Text>
+                      <Text style={styles.ctaText}>{loading ? 'Sending...' : 'Send Reset Link'}</Text>
                     </LinearGradient>
                   </TouchableOpacity>
                 </>

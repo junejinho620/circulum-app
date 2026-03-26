@@ -17,13 +17,28 @@ const common_1 = require("@nestjs/common");
 const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
 const notification_entity_1 = require("../../database/entities/notification.entity");
+const push_service_1 = require("./push.service");
+const PUSH_CONTENT = {
+    [notification_entity_1.NotificationType.COMMENT_REPLY]: { title: 'New Reply', bodyTemplate: 'Someone replied to your comment' },
+    [notification_entity_1.NotificationType.POST_COMMENT]: { title: 'New Comment', bodyTemplate: 'Someone commented on your post' },
+    [notification_entity_1.NotificationType.NEW_MESSAGE]: { title: 'New Message', bodyTemplate: 'You have a new message' },
+    [notification_entity_1.NotificationType.MESSAGE_REQUEST]: { title: 'Message Request', bodyTemplate: 'Someone wants to message you' },
+    [notification_entity_1.NotificationType.VOTE_MILESTONE]: { title: 'Milestone!', bodyTemplate: 'Your post hit a vote milestone' },
+    [notification_entity_1.NotificationType.MODERATION_WARNING]: { title: 'Warning', bodyTemplate: 'You received a moderation warning' },
+    [notification_entity_1.NotificationType.MODERATION_SUSPENSION]: { title: 'Account Suspended', bodyTemplate: 'Your account has been suspended' },
+    [notification_entity_1.NotificationType.MODERATION_BAN]: { title: 'Account Banned', bodyTemplate: 'Your account has been banned' },
+};
 let NotificationsService = class NotificationsService {
-    constructor(notificationRepo) {
+    constructor(notificationRepo, pushService) {
         this.notificationRepo = notificationRepo;
+        this.pushService = pushService;
     }
     async create(userId, type, payload) {
         const notification = this.notificationRepo.create({ userId, type, payload });
-        return this.notificationRepo.save(notification);
+        const saved = await this.notificationRepo.save(notification);
+        const content = PUSH_CONTENT[type];
+        this.pushService.sendToUser(userId, content.title, payload.message ?? content.bodyTemplate, { type, notificationId: saved.id, ...payload }).catch(() => { });
+        return saved;
     }
     async getForUser(userId, page = 1, limit = 30) {
         const [items, total] = await this.notificationRepo.findAndCount({
@@ -50,6 +65,7 @@ exports.NotificationsService = NotificationsService;
 exports.NotificationsService = NotificationsService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, typeorm_1.InjectRepository)(notification_entity_1.Notification)),
-    __metadata("design:paramtypes", [typeorm_2.Repository])
+    __metadata("design:paramtypes", [typeorm_2.Repository,
+        push_service_1.PushService])
 ], NotificationsService);
 //# sourceMappingURL=notifications.service.js.map

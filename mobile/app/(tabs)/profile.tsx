@@ -23,6 +23,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useAuthStore } from '../../src/store/auth.store';
+import { useMyProfile } from '../../src/services/queries';
 
 const T = {
   textPrimary: '#111111',
@@ -102,7 +103,7 @@ function getAchievements(posts: number, replies: number, upvotes: number, discus
   ];
 }
 
-// ─── XP Activity Feed (mock) ─────────────────────────────────────────────────
+// ─── XP Activity Feed (mock — no backend endpoint yet) ─────────────────────
 type XPEvent = { id: string; label: string; xp: number; icon: string; time: string; color: string };
 
 const RECENT_XP: XPEvent[] = [
@@ -393,14 +394,81 @@ function MenuAction({
   );
 }
 
+// ─── Loading Skeleton ────────────────────────────────────────────────────────
+function ProfileSkeleton() {
+  const pulseAnim = useRef(new Animated.Value(0.4)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 0.4, duration: 800, useNativeDriver: true }),
+      ]),
+    ).start();
+  }, []);
+
+  const Bone = ({ width, height, style }: { width: number; height: number; style?: any }) => (
+    <Animated.View
+      style={[
+        { width, height, borderRadius: height / 2, backgroundColor: 'rgba(17,17,17,0.08)', opacity: pulseAnim },
+        style,
+      ]}
+    />
+  );
+
+  return (
+    <View style={{ paddingTop: 6, paddingBottom: 36, gap: 18 }}>
+      {/* Hero skeleton */}
+      <View style={[s.cardShadow, { padding: 22 }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+          <Bone width={92} height={92} style={{ borderRadius: 46 }} />
+          <View style={{ flex: 1, gap: 8 }}>
+            <Bone width={140} height={22} />
+            <Bone width={180} height={14} />
+            <Bone width={120} height={12} />
+          </View>
+        </View>
+        <View style={{ marginTop: 18, gap: 8 }}>
+          <Bone width={200} height={16} />
+          <Bone width={280} height={8} style={{ borderRadius: 4 }} />
+        </View>
+      </View>
+
+      {/* Stats skeleton */}
+      <View style={{ flexDirection: 'row', paddingHorizontal: 22, gap: 10 }}>
+        {[1, 2, 3, 4].map((i) => (
+          <Bone key={i} width={108} height={58} style={{ borderRadius: 22 }} />
+        ))}
+      </View>
+
+      {/* Streak skeleton */}
+      <View style={[s.cardShadow, { padding: 20 }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <Bone width={40} height={40} style={{ borderRadius: 14 }} />
+          <View style={{ flex: 1, gap: 6 }}>
+            <Bone width={120} height={16} />
+            <Bone width={80} height={11} />
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, logout } = useAuthStore();
+  const { data: profileData, isLoading, refetch } = useMyProfile();
   const [refreshing, setRefreshing] = useState(false);
-  const onRefresh = useCallback(() => {
+
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1200);
-  }, []);
+    try {
+      await refetch();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch]);
 
   const handleLogout = () => {
     if (!user) {
@@ -421,7 +489,8 @@ export default function ProfileScreen() {
     ]);
   };
 
-  const profile = user ?? {
+  // Use API data, fall back to auth store user, then to anonymous defaults
+  const profile = profileData ?? user ?? {
     handle: 'AnonVisitor',
     university: { name: 'University of Toronto' },
     createdAt: new Date().toISOString(),
@@ -430,11 +499,10 @@ export default function ProfileScreen() {
     commentCount: 0,
   };
 
-  const joinedYear = new Date(profile.createdAt).getFullYear();
-  const posts = profile.postCount;
-  const replies = profile.commentCount;
-  const upvotes = profile.totalKarma;
-  const discussionsJoined = Math.max(3, Math.round((profile.postCount + profile.commentCount) / 2));
+  const posts = profile.postCount ?? 0;
+  const replies = profile.commentCount ?? 0;
+  const upvotes = profile.totalKarma ?? 0;
+  const discussionsJoined = Math.max(3, Math.round((posts + replies) / 2));
 
   // Gamification state (mock — will come from backend later)
   const currentStreak = 5;
@@ -478,6 +546,11 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
+        {isLoading && !user ? (
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
+            <ProfileSkeleton />
+          </ScrollView>
+        ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={s.scroll}
@@ -497,7 +570,7 @@ export default function ProfileScreen() {
               <View style={s.heroTopRow}>
                 <LinearGradient colors={AVATAR} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.avatarOuter}>
                   <View style={s.avatarInner}>
-                    <Text style={s.avatarText}>{profile.handle.charAt(0).toUpperCase()}</Text>
+                    <Text style={s.avatarText}>{(profile.handle ?? 'A').charAt(0).toUpperCase()}</Text>
                   </View>
                 </LinearGradient>
 
@@ -670,6 +743,7 @@ export default function ProfileScreen() {
 
           <Text style={s.version}>Circulum MVP v0.1.0</Text>
         </ScrollView>
+        )}
       </SafeAreaView>
     </View>
   );

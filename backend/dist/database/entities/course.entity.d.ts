@@ -5,6 +5,12 @@ export declare class Course {
     code: string;
     name: string;
     department: string;
+    description: string;
+    terms: string[];
+    avgRating: number;
+    avgDifficulty: number;
+    avgWorkload: number;
+    reviewCount: number;
     university: University;
     universityId: string;
     userCourses: UserCourse[];

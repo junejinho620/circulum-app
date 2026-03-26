@@ -1,12 +1,15 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
   FlatList, Dimensions, Modal, Pressable, Animated, RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useCoursesWithReviews, useCourseDetail, CourseDetail } from '../src/services/queries';
+import { useDebouncedValue } from '../src/hooks/useDebouncedValue';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -28,18 +31,33 @@ const CTA: [string, string, string] = ['#4B50F8', '#8B4DFF', '#E655C5'];
 const DIFF_LABELS = ['Easy', 'Moderate', 'Hard', 'Very Hard'];
 const DIFF_COLORS = ['#3DAB73', '#F1973B', '#E05555', '#C43030'];
 
-function diffLabel(d: number) { return DIFF_LABELS[Math.min(d, 3)]; }
-function diffColor(d: number) { return DIFF_COLORS[Math.min(d, 3)]; }
+function diffLabel(d: number) { return DIFF_LABELS[Math.min(Math.round(d), 3)]; }
+function diffColor(d: number) { return DIFF_COLORS[Math.min(Math.round(d), 3)]; }
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
-type Course = {
+// ─── UI constants ─────────────────────────────────────────────────────────────
+const FILTER_CHIPS = ['All', 'Computer Science', 'Mathematics', 'Statistics', 'Psychology', 'Economics', 'History', 'Astronomy', 'Philosophy'];
+const LEVEL_CHIPS = ['All Levels', '100-level', '200-level', '300-level', 'Graduate'];
+const SORT_OPTIONS = ['Most Popular', 'Highest Rated', 'Lowest Workload', 'Recently Discussed'];
+
+// ─── Map API sort labels to query params ──────────────────────────────────────
+function sortLabelToParam(label: string): string {
+  switch (label) {
+    case 'Highest Rated': return 'rating';
+    case 'Lowest Workload': return 'workload';
+    case 'Recently Discussed': return 'discussed';
+    default: return 'popular';
+  }
+}
+
+// ─── Normalize API CourseDetail to a shape the UI components expect ──────────
+interface UICourse {
   id: string;
   code: string;
   title: string;
   department: string;
-  difficulty: number;      // 0-3
-  workload: number;        // hrs/week
-  rating: number;          // 0-5
+  difficulty: number;
+  workload: number;
+  rating: number;
   reviewCount: number;
   discussionCount: number;
   description: string;
@@ -52,104 +70,39 @@ type Course = {
   gradeDistribution: { A: number; B: number; C: number; D: number; F: number };
   tips: string[];
   pitfalls: string[];
-};
+}
 
-const COURSES: Course[] = [
-  {
-    id: '1', code: 'CSC108', title: 'Introduction to Computer Programming',
-    department: 'Computer Science', difficulty: 0, workload: 6, rating: 4.3, reviewCount: 312, discussionCount: 48,
-    description: 'An introduction to programming in Python. Variables, functions, conditionals, loops, lists, and file I/O.',
-    terms: ['Fall', 'Winter', 'Summer'], trending: 'hot', prerequisites: [], followUps: ['CSC148', 'CSC120'],
-    topProfessors: ['Prof. Liu', 'Prof. Guerzhoy'], gradeDistribution: { A: 35, B: 30, C: 20, D: 10, F: 5 },
-    tips: ['Start assignments early — the autograder queue gets long near deadlines', 'Attend labs for easy marks'],
-    pitfalls: ['Don\'t skip the style guide — you lose marks for bad formatting'],
-  },
-  {
-    id: '2', code: 'MAT237', title: 'Multivariable Calculus',
-    department: 'Mathematics', difficulty: 3, workload: 14, rating: 3.2, reviewCount: 189, discussionCount: 72,
-    description: 'Sequences, series, topology of Rⁿ, multivariable limits, derivatives, integrals, vector calculus.',
-    terms: ['Fall', 'Winter'], trending: 'rising', prerequisites: ['MAT137', 'MAT157'], followUps: ['MAT337', 'APM346'],
-    topProfessors: ['Prof. Selick', 'Prof. Bierstone'], gradeDistribution: { A: 15, B: 25, C: 30, D: 20, F: 10 },
-    tips: ['Form a study group — the problem sets are brutal alone', 'Use the textbook examples religiously'],
-    pitfalls: ['The jump from MAT137 is steep — review epsilon-delta proofs'],
-  },
-  {
-    id: '3', code: 'PSY100', title: 'Introductory Psychology',
-    department: 'Psychology', difficulty: 0, workload: 5, rating: 4.5, reviewCount: 524, discussionCount: 31,
-    description: 'Survey of major areas: neuroscience, perception, learning, memory, development, personality, social behaviour.',
-    terms: ['Fall', 'Winter', 'Summer'], bird: true, prerequisites: [], followUps: ['PSY201', 'PSY210', 'PSY220'],
-    topProfessors: ['Prof. Bhatt', 'Prof. Bhatt'], gradeDistribution: { A: 40, B: 35, C: 15, D: 7, F: 3 },
-    tips: ['Read the textbook — exam questions come straight from it', 'The online quizzes are free marks'],
-    pitfalls: ['Don\'t underestimate the final — it\'s cumulative and detailed'],
-  },
-  {
-    id: '4', code: 'CSC263', title: 'Data Structures and Analysis',
-    department: 'Computer Science', difficulty: 2, workload: 10, rating: 3.8, reviewCount: 276, discussionCount: 95,
-    description: 'Algorithm analysis. Heaps, BSTs, hash tables, graphs, amortized analysis, randomized algorithms.',
-    terms: ['Fall', 'Winter'], trending: 'hot', prerequisites: ['CSC148', 'CSC165'], followUps: ['CSC373', 'CSC369'],
-    topProfessors: ['Prof. Horton', 'Prof. Baumgart'], gradeDistribution: { A: 20, B: 30, C: 25, D: 15, F: 10 },
-    tips: ['Draw everything — visual representations help for tree/graph problems', 'Past exams are gold'],
-    pitfalls: ['Amortized analysis trips everyone up — spend extra time on it'],
-  },
-  {
-    id: '5', code: 'STA257', title: 'Probability and Statistics I',
-    department: 'Statistics', difficulty: 2, workload: 9, rating: 3.5, reviewCount: 198, discussionCount: 44,
-    description: 'Probability spaces, random variables, distributions, expectation, limit theorems.',
-    terms: ['Fall', 'Winter'], prerequisites: ['MAT137'], followUps: ['STA261', 'STA302'],
-    topProfessors: ['Prof. Brenner', 'Prof. Taback'], gradeDistribution: { A: 18, B: 28, C: 30, D: 16, F: 8 },
-    tips: ['Practice with past midterms — question style is consistent', 'Derivations matter more than memorizing formulas'],
-    pitfalls: ['The transition from discrete to continuous distributions is tricky'],
-  },
-  {
-    id: '6', code: 'HIS101', title: 'World History to 1500',
-    department: 'History', difficulty: 1, workload: 7, rating: 4.1, reviewCount: 145, discussionCount: 22,
-    description: 'Survey of global civilizations from antiquity to the early modern period.',
-    terms: ['Fall'], bird: true, prerequisites: [], followUps: ['HIS102', 'HIS201'],
-    topProfessors: ['Prof. Chen', 'Prof. Kumar'], gradeDistribution: { A: 30, B: 35, C: 22, D: 8, F: 5 },
-    tips: ['The essay rubric is strict — visit the writing center', 'Tutorial participation counts heavily'],
-    pitfalls: ['Don\'t skip the primary source readings — they show up on exams'],
-  },
-  {
-    id: '7', code: 'ECO101', title: 'Principles of Microeconomics',
-    department: 'Economics', difficulty: 1, workload: 6, rating: 4.0, reviewCount: 402, discussionCount: 38,
-    description: 'Supply and demand, market structures, consumer theory, production, welfare economics.',
-    terms: ['Fall', 'Winter', 'Summer'], prerequisites: [], followUps: ['ECO102', 'ECO200'],
-    topProfessors: ['Prof. Gazzale', 'Prof. Shum'], gradeDistribution: { A: 25, B: 35, C: 25, D: 10, F: 5 },
-    tips: ['The textbook problems mirror exam questions closely', 'Office hours are underused — take advantage'],
-    pitfalls: ['Graph-reading questions are easy marks people throw away'],
-  },
-  {
-    id: '8', code: 'AST101', title: 'The Sun and Its Neighbours',
-    department: 'Astronomy', difficulty: 0, workload: 4, rating: 4.6, reviewCount: 380, discussionCount: 18,
-    description: 'The solar system, planetary science, space exploration, astrobiology fundamentals.',
-    terms: ['Fall', 'Winter'], bird: true, prerequisites: [], followUps: ['AST201', 'AST210'],
-    topProfessors: ['Prof. Cami', 'Prof. Dotten'], gradeDistribution: { A: 45, B: 30, C: 15, D: 7, F: 3 },
-    tips: ['Show up to lecture — there are iClicker marks', 'The planetarium session is both mandatory and awesome'],
-    pitfalls: ['Don\'t blow off the final just because it\'s a bird course'],
-  },
-  {
-    id: '9', code: 'CSC148', title: 'Introduction to Computer Science',
-    department: 'Computer Science', difficulty: 1, workload: 8, rating: 4.2, reviewCount: 295, discussionCount: 56,
-    description: 'Abstract data types, recursion, object-oriented programming, algorithm analysis intro.',
-    terms: ['Fall', 'Winter'], prerequisites: ['CSC108'], followUps: ['CSC207', 'CSC236', 'CSC263'],
-    topProfessors: ['Prof. Calver', 'Prof. Smith'], gradeDistribution: { A: 28, B: 32, C: 22, D: 12, F: 6 },
-    tips: ['Recursion is the hardest part — practice with small examples first', 'Use the debugger, not print statements'],
-    pitfalls: ['The linked list assignment has tricky edge cases — test thoroughly'],
-  },
-  {
-    id: '10', code: 'PHL101', title: 'Introduction to Philosophy',
-    department: 'Philosophy', difficulty: 1, workload: 5, rating: 4.3, reviewCount: 210, discussionCount: 15,
-    description: 'Fundamental philosophical questions: knowledge, reality, ethics, free will, meaning.',
-    terms: ['Fall', 'Winter'], bird: true, prerequisites: [], followUps: ['PHL200', 'PHL210'],
-    topProfessors: ['Prof. Morrison', 'Prof. Fenton'], gradeDistribution: { A: 32, B: 33, C: 20, D: 10, F: 5 },
-    tips: ['The essay is 40% of your grade — start early and get TA feedback', 'Tutorials are where the real learning happens'],
-    pitfalls: ['Avoid vague thesis statements — TAs mark specifically on argument structure'],
-  },
-];
-
-const FILTER_CHIPS = ['All', 'Computer Science', 'Mathematics', 'Statistics', 'Psychology', 'Economics', 'History', 'Astronomy', 'Philosophy'];
-const LEVEL_CHIPS = ['All Levels', '100-level', '200-level', '300-level', 'Graduate'];
-const SORT_OPTIONS = ['Most Popular', 'Highest Rated', 'Lowest Workload', 'Recently Discussed'];
+function toUICourse(c: CourseDetail): UICourse {
+  const gd = c.gradeDistribution || {};
+  return {
+    id: c.id,
+    code: c.code,
+    title: c.name,
+    department: c.department,
+    difficulty: c.avgDifficulty,
+    workload: c.avgWorkload,
+    rating: c.avgRating,
+    reviewCount: c.reviewCount,
+    discussionCount: 0,
+    description: c.description || '',
+    terms: c.terms || [],
+    topProfessors: c.topProfessors || [],
+    gradeDistribution: {
+      A: (gd as any).A ?? 0,
+      B: (gd as any).B ?? 0,
+      C: (gd as any).C ?? 0,
+      D: (gd as any).D ?? 0,
+      F: (gd as any).F ?? 0,
+    },
+    tips: c.tips || [],
+    pitfalls: c.pitfalls || [],
+    prerequisites: [],
+    followUps: [],
+    // Derive trending / bird heuristics from data
+    trending: c.reviewCount >= 300 ? 'hot' : c.reviewCount >= 200 ? 'rising' : undefined,
+    bird: c.avgDifficulty <= 0.5 && c.avgWorkload <= 5,
+  };
+}
 
 // ─── Header ──────────────────────────────────────────────────────────────────
 function Header({ onBack, onMyCourses }: { onBack: () => void; onMyCourses: () => void }) {
@@ -185,7 +138,7 @@ function SearchBar({
   value, onChange, onClear, suggestions, onSelectCourse,
 }: {
   value: string; onChange: (t: string) => void; onClear: () => void;
-  suggestions: Course[]; onSelectCourse: (id: string) => void;
+  suggestions: UICourse[]; onSelectCourse: (id: string) => void;
 }) {
   return (
     <View style={{ zIndex: 10 }}>
@@ -395,7 +348,7 @@ const sh = StyleSheet.create({
 });
 
 // ─── Trending Course Card (horizontal) ───────────────────────────────────────
-function TrendingCourseCard({ course, onPress }: { course: Course; onPress: () => void }) {
+function TrendingCourseCard({ course, onPress }: { course: UICourse; onPress: () => void }) {
   return (
     <TouchableOpacity activeOpacity={0.82} onPress={onPress} style={tc.card}>
       <View style={tc.inner}>
@@ -424,7 +377,7 @@ function TrendingCourseCard({ course, onPress }: { course: Course; onPress: () =
           </View>
           <View style={tc.statRow}>
             <Ionicons name="chatbubble-outline" size={10} color={T.textMuted} />
-            <Text style={tc.statText}>{course.discussionCount}</Text>
+            <Text style={tc.statText}>{course.reviewCount}</Text>
           </View>
         </View>
       </View>
@@ -464,7 +417,7 @@ const tc = StyleSheet.create({
 });
 
 // ─── Bird Course Card (horizontal) ───────────────────────────────────────────
-function BirdCourseCard({ course, onPress }: { course: Course; onPress: () => void }) {
+function BirdCourseCard({ course, onPress }: { course: UICourse; onPress: () => void }) {
   return (
     <TouchableOpacity activeOpacity={0.82} onPress={onPress} style={bc.card}>
       <View style={bc.inner}>
@@ -527,7 +480,7 @@ const bc = StyleSheet.create({
 
 // ─── Course List Card (vertical) ─────────────────────────────────────────────
 function CourseListCard({ course, onPress, onBookmark, saved }: {
-  course: Course; onPress: () => void; onBookmark: () => void; saved: boolean;
+  course: UICourse; onPress: () => void; onBookmark: () => void; saved: boolean;
 }) {
   return (
     <TouchableOpacity activeOpacity={0.82} onPress={onPress} style={cl.card}>
@@ -600,48 +553,61 @@ const cl = StyleSheet.create({
 });
 
 // ─── Quick Preview Modal ─────────────────────────────────────────────────────
-function QuickPreviewModal({ course, visible, onClose, onFullDetail }: {
-  course: Course | null; visible: boolean; onClose: () => void; onFullDetail: () => void;
+function QuickPreviewModal({ courseId, visible, onClose, onFullDetail }: {
+  courseId: string | null; visible: boolean; onClose: () => void; onFullDetail: () => void;
 }) {
-  if (!course) return null;
+  const { data: detail, isLoading } = useCourseDetail(courseId || '');
+  const course = detail ? toUICourse(detail) : null;
+
+  if (!courseId) return null;
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={qp.backdrop} onPress={onClose}>
         <Pressable style={qp.sheet} onPress={(e) => e.stopPropagation()}>
           <View style={qp.handle} />
-          <View style={qp.header}>
-            <View style={qp.codeWrap}>
-              <Text style={qp.code}>{course.code}</Text>
+          {isLoading || !course ? (
+            <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+              <ActivityIndicator size="large" color={T.accentPurple} />
+              <Text style={{ marginTop: 12, fontSize: 13, color: T.textMuted }}>Loading course details...</Text>
             </View>
-            <Text style={qp.dept}>{course.department}</Text>
-          </View>
-          <Text style={qp.title}>{course.title}</Text>
-          <Text style={qp.desc}>{course.description}</Text>
-          <View style={qp.statsRow}>
-            <View style={[qp.diffBadge, { backgroundColor: diffColor(course.difficulty) + '15' }]}>
-              <Text style={[qp.diffText, { color: diffColor(course.difficulty) }]}>{diffLabel(course.difficulty)}</Text>
-            </View>
-            <View style={qp.stat}>
-              <Ionicons name="time-outline" size={13} color={T.textMuted} />
-              <Text style={qp.statText}>{course.workload}h/wk</Text>
-            </View>
-            <View style={qp.stat}>
-              <Ionicons name="star" size={13} color="#F1973B" />
-              <Text style={qp.statText}>{course.rating.toFixed(1)}</Text>
-            </View>
-          </View>
-          {course.terms.length > 0 && (
-            <View style={qp.termsRow}>
-              <Ionicons name="calendar-outline" size={12} color={T.textMuted} />
-              <Text style={qp.termsText}>{course.terms.join(' · ')}</Text>
-            </View>
+          ) : (
+            <>
+              <View style={qp.header}>
+                <View style={qp.codeWrap}>
+                  <Text style={qp.code}>{course.code}</Text>
+                </View>
+                <Text style={qp.dept}>{course.department}</Text>
+              </View>
+              <Text style={qp.title}>{course.title}</Text>
+              <Text style={qp.desc}>{course.description}</Text>
+              <View style={qp.statsRow}>
+                <View style={[qp.diffBadge, { backgroundColor: diffColor(course.difficulty) + '15' }]}>
+                  <Text style={[qp.diffText, { color: diffColor(course.difficulty) }]}>{diffLabel(course.difficulty)}</Text>
+                </View>
+                <View style={qp.stat}>
+                  <Ionicons name="time-outline" size={13} color={T.textMuted} />
+                  <Text style={qp.statText}>{course.workload}h/wk</Text>
+                </View>
+                <View style={qp.stat}>
+                  <Ionicons name="star" size={13} color="#F1973B" />
+                  <Text style={qp.statText}>{course.rating.toFixed(1)}</Text>
+                </View>
+              </View>
+              {course.terms.length > 0 && (
+                <View style={qp.termsRow}>
+                  <Ionicons name="calendar-outline" size={12} color={T.textMuted} />
+                  <Text style={qp.termsText}>{course.terms.join(' · ')}</Text>
+                </View>
+              )}
+              <TouchableOpacity activeOpacity={0.8} onPress={onFullDetail}>
+                <LinearGradient colors={CTA} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={qp.ctaBtn}>
+                  <Text style={qp.ctaText}>View Full Details</Text>
+                  <Ionicons name="arrow-forward" size={16} color={T.white} />
+                </LinearGradient>
+              </TouchableOpacity>
+            </>
           )}
-          <TouchableOpacity activeOpacity={0.8} onPress={onFullDetail}>
-            <LinearGradient colors={CTA} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={qp.ctaBtn}>
-              <Text style={qp.ctaText}>View Full Details</Text>
-              <Ionicons name="arrow-forward" size={16} color={T.white} />
-            </LinearGradient>
-          </TouchableOpacity>
         </Pressable>
       </Pressable>
     </Modal>
@@ -681,6 +647,16 @@ const qp = StyleSheet.create({
   ctaText: { fontSize: 15, fontWeight: '700', color: T.white },
 });
 
+// ─── Loading Skeleton ─────────────────────────────────────────────────────────
+function LoadingSkeleton() {
+  return (
+    <View style={{ paddingTop: 60, alignItems: 'center', gap: 12 }}>
+      <ActivityIndicator size="large" color={T.accentPurple} />
+      <Text style={{ fontSize: 14, color: T.textMuted, fontWeight: '600' }}>Loading courses...</Text>
+    </View>
+  );
+}
+
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 export default function CoursesScreen() {
   const router = useRouter();
@@ -689,47 +665,65 @@ export default function CoursesScreen() {
   const [deptFilter, setDeptFilter] = useState('All');
   const [sortBy, setSortBy] = useState('Most Popular');
   const [savedCourses, setSavedCourses] = useState<Set<string>>(new Set());
-  const [previewCourse, setPreviewCourse] = useState<Course | null>(null);
+  const [previewCourseId, setPreviewCourseId] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [refreshing, setRefreshing] = useState(false);
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1200);
-  }, []);
+  // ─── API data ──────────────────────────────────────────────────────────────
+  const selectedDept = deptFilter === 'All' ? undefined : deptFilter;
+  const selectedSort = sortLabelToParam(sortBy);
+  const debouncedSearch = useDebouncedValue(search.trim(), 400);
+  const searchQuery = debouncedSearch.length >= 2 ? debouncedSearch : undefined;
+  const { data: courses, isLoading, isFetching, refetch } = useCoursesWithReviews(selectedDept, selectedSort, searchQuery);
 
-  const trendingCourses = COURSES.filter((c) => c.trending);
-  const birdCourses = COURSES.filter((c) => c.bird);
+  // Map API data to UI shape
+  const allCourses: UICourse[] = useMemo(
+    () => (courses || []).map(toUICourse),
+    [courses],
+  );
+
+  const trendingCourses = useMemo(
+    () => allCourses.filter((c) => c.trending),
+    [allCourses],
+  );
+  const birdCourses = useMemo(
+    () => allCourses.filter((c) => c.bird),
+    [allCourses],
+  );
 
   // Search suggestions
-  const suggestions = search.length > 0
-    ? COURSES.filter((c) =>
-        c.code.toLowerCase().includes(search.toLowerCase()) ||
-        c.title.toLowerCase().includes(search.toLowerCase()) ||
-        c.department.toLowerCase().includes(search.toLowerCase()) ||
-        c.topProfessors.some((p) => p.toLowerCase().includes(search.toLowerCase()))
-      )
-    : [];
+  const suggestions = useMemo(() => {
+    if (search.length === 0) return [];
+    return allCourses.filter((c) =>
+      c.code.toLowerCase().includes(search.toLowerCase()) ||
+      c.title.toLowerCase().includes(search.toLowerCase()) ||
+      c.department.toLowerCase().includes(search.toLowerCase()) ||
+      c.topProfessors.some((p) => p.toLowerCase().includes(search.toLowerCase()))
+    );
+  }, [allCourses, search]);
 
-  // Filtered + sorted list
-  const filteredCourses = COURSES
-    .filter((c) => {
-      if (deptFilter !== 'All' && c.department !== deptFilter) return false;
-      if (search.length > 0) {
-        const q = search.toLowerCase();
-        return c.code.toLowerCase().includes(q) || c.title.toLowerCase().includes(q);
-      }
-      return true;
-    })
-    .sort((a, b) => {
-      switch (sortBy) {
-        case 'Highest Rated': return b.rating - a.rating;
-        case 'Lowest Workload': return a.workload - b.workload;
-        case 'Recently Discussed': return b.discussionCount - a.discussionCount;
-        default: return b.reviewCount - a.reviewCount; // Most Popular
-      }
-    });
+  // Filtered + sorted list (sorting is primarily handled by API, but
+  // we still filter client-side for local search text)
+  const filteredCourses = useMemo(() => {
+    let result = allCourses;
+    if (search.length > 0) {
+      const q = search.toLowerCase();
+      result = result.filter(
+        (c) => c.code.toLowerCase().includes(q) || c.title.toLowerCase().includes(q),
+      );
+    }
+    return result;
+  }, [allCourses, search]);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refetch();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch]);
 
   const toggleSave = (id: string) => {
     setSavedCourses((prev) => {
@@ -744,8 +738,8 @@ export default function CoursesScreen() {
     router.push(`/course/${id}` as any);
   };
 
-  const handleLongPress = (course: Course) => {
-    setPreviewCourse(course);
+  const handleLongPress = (courseId: string) => {
+    setPreviewCourseId(courseId);
     setShowPreview(true);
   };
 
@@ -756,84 +750,103 @@ export default function CoursesScreen() {
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <Header onBack={() => router.back()} onMyCourses={() => {}} />
 
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={s.scroll}
-          keyboardShouldPersistTaps="handled"
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#8B4DFF" colors={['#8B4DFF']} />
-          }
-        >
-
-          {/* Trending */}
-          <SectionHeader title="Trending Courses" icon="flame-outline" iconColor={T.accentBlue} onSeeAll={() => {}} />
+        {isLoading ? (
+          <LoadingSkeleton />
+        ) : (
           <ScrollView
-            horizontal showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 22, gap: 12 }}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={s.scroll}
+            keyboardShouldPersistTaps="handled"
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#8B4DFF" colors={['#8B4DFF']} />
+            }
           >
-            {trendingCourses.map((c) => (
-              <TrendingCourseCard key={c.id} course={c} onPress={() => openCourseDetail(c.id)} />
-            ))}
+
+            {/* Trending */}
+            {trendingCourses.length > 0 && (
+              <>
+                <SectionHeader title="Trending Courses" icon="flame-outline" iconColor={T.accentBlue} onSeeAll={() => {}} />
+                <ScrollView
+                  horizontal showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ paddingHorizontal: 22, gap: 12 }}
+                >
+                  {trendingCourses.map((c) => (
+                    <TrendingCourseCard key={c.id} course={c} onPress={() => openCourseDetail(c.id)} />
+                  ))}
+                </ScrollView>
+              </>
+            )}
+
+            {/* Bird Courses */}
+            {birdCourses.length > 0 && (
+              <>
+                <SectionHeader title="Bird Courses" icon="leaf-outline" iconColor="#3DAB73" onSeeAll={() => {}} />
+                <ScrollView
+                  horizontal showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ paddingHorizontal: 22, gap: 12 }}
+                >
+                  {birdCourses.map((c) => (
+                    <BirdCourseCard key={c.id} course={c} onPress={() => openCourseDetail(c.id)} />
+                  ))}
+                </ScrollView>
+              </>
+            )}
+
+            {/* Divider */}
+            <View style={s.divider}>
+              <View style={s.dividerLine} />
+              <View style={s.dividerDot} />
+              <View style={s.dividerLine} />
+            </View>
+
+            {/* Search */}
+            <SearchBar
+              value={search}
+              onChange={setSearch}
+              onClear={() => setSearch('')}
+              suggestions={suggestions}
+              onSelectCourse={openCourseDetail}
+            />
+
+            {/* Filters */}
+            <FilterChips chips={FILTER_CHIPS} active={deptFilter} onSelect={setDeptFilter} />
+
+            {/* Sort */}
+            <SortDropdown active={sortBy} onSelect={setSortBy} />
+
+            {/* Course List */}
+            <SectionHeader title="All Courses" icon="library-outline" iconColor={T.accentBlue} />
+            <View style={{ gap: 0 }}>
+              {filteredCourses.length === 0 ? (
+                <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+                  <Ionicons name="search-outline" size={36} color={T.textMuted} />
+                  <Text style={{ marginTop: 10, fontSize: 14, color: T.textMuted, fontWeight: '600' }}>No courses found</Text>
+                </View>
+              ) : (
+                filteredCourses.map((c) => (
+                  <CourseListCard
+                    key={c.id}
+                    course={c}
+                    saved={savedCourses.has(c.id)}
+                    onPress={() => openCourseDetail(c.id)}
+                    onBookmark={() => toggleSave(c.id)}
+                  />
+                ))
+              )}
+            </View>
+
+            <View style={{ height: 40 }} />
           </ScrollView>
-
-          {/* Bird Courses */}
-          <SectionHeader title="Bird Courses" icon="leaf-outline" iconColor="#3DAB73" onSeeAll={() => {}} />
-          <ScrollView
-            horizontal showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 22, gap: 12 }}
-          >
-            {birdCourses.map((c) => (
-              <BirdCourseCard key={c.id} course={c} onPress={() => openCourseDetail(c.id)} />
-            ))}
-          </ScrollView>
-
-          {/* Divider */}
-          <View style={s.divider}>
-            <View style={s.dividerLine} />
-            <View style={s.dividerDot} />
-            <View style={s.dividerLine} />
-          </View>
-
-          {/* Search */}
-          <SearchBar
-            value={search}
-            onChange={setSearch}
-            onClear={() => setSearch('')}
-            suggestions={suggestions}
-            onSelectCourse={openCourseDetail}
-          />
-
-          {/* Filters */}
-          <FilterChips chips={FILTER_CHIPS} active={deptFilter} onSelect={setDeptFilter} />
-
-          {/* Sort */}
-          <SortDropdown active={sortBy} onSelect={setSortBy} />
-
-          {/* Course List */}
-          <SectionHeader title="All Courses" icon="library-outline" iconColor={T.accentBlue} />
-          <View style={{ gap: 0 }}>
-            {filteredCourses.map((c) => (
-              <CourseListCard
-                key={c.id}
-                course={c}
-                saved={savedCourses.has(c.id)}
-                onPress={() => openCourseDetail(c.id)}
-                onBookmark={() => toggleSave(c.id)}
-              />
-            ))}
-          </View>
-
-          <View style={{ height: 40 }} />
-        </ScrollView>
+        )}
       </SafeAreaView>
 
       <QuickPreviewModal
-        course={previewCourse}
+        courseId={previewCourseId}
         visible={showPreview}
         onClose={() => setShowPreview(false)}
         onFullDetail={() => {
           setShowPreview(false);
-          if (previewCourse) openCourseDetail(previewCourse.id);
+          if (previewCourseId) openCourseDetail(previewCourseId);
         }}
       />
     </View>

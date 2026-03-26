@@ -14,7 +14,7 @@ export class CommunitiesService {
     private dataSource: DataSource,
   ) {}
 
-  async findAll(universityId: string, type?: CommunityType) {
+  async findAll(universityId: string, type?: CommunityType, limit = 30) {
     const qb = this.communityRepo.createQueryBuilder('c')
       .where('c.universityId = :universityId', { universityId })
       .andWhere('c.isActive = true');
@@ -23,9 +23,15 @@ export class CommunitiesService {
       qb.andWhere('c.type = :type', { type });
     }
 
+    // Exclude course communities from the main listing (too many) unless specifically filtered
+    if (!type) {
+      qb.andWhere('c.type != :courseType', { courseType: CommunityType.COURSE });
+    }
+
     return qb
       .select(['c.id', 'c.name', 'c.slug', 'c.description', 'c.type', 'c.iconUrl', 'c.memberCount', 'c.postCount'])
       .orderBy('c.memberCount', 'DESC')
+      .take(limit)
       .getMany();
   }
 

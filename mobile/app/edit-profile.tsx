@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
   Alert, Modal, Pressable, FlatList, Dimensions,
@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuthStore } from '../src/store/auth.store';
+import { useMyProfile, useUpdateProfile } from '../src/services/queries';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -252,6 +253,8 @@ const as = StyleSheet.create({
 export default function EditProfileScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
+  const { data: currentProfile } = useMyProfile();
+  const updateProfile = useUpdateProfile();
 
   const [handle, setHandle] = useState(user?.handle ?? 'AnonVisitor');
   const [bio, setBio] = useState('');
@@ -264,6 +267,17 @@ export default function EditProfileScreen() {
   const [showInterests, setShowInterests] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
+  // Initialize form state from server profile when it loads
+  useEffect(() => {
+    if (currentProfile) {
+      setHandle(currentProfile.handle ?? user?.handle ?? 'AnonVisitor');
+      setBio(currentProfile.bio ?? '');
+      setMajor(currentProfile.major?.name ?? '');
+      setYear(currentProfile.year ?? '2nd');
+      setInterests(currentProfile.interests ?? []);
+    }
+  }, [currentProfile]);
+
   const handleStatus = validateHandle(handle);
   const completion = calcCompletion(handle, bio, major, year, interests);
 
@@ -273,9 +287,18 @@ export default function EditProfileScreen() {
     );
   };
 
-  const handleSave = () => {
-    setShowSuccess(true);
-    setTimeout(() => { setShowSuccess(false); router.back(); }, 1600);
+  const handleSave = async () => {
+    try {
+      await updateProfile.mutateAsync({ handle, bio, year, interests });
+      setShowSuccess(true);
+      setTimeout(() => { setShowSuccess(false); router.back(); }, 1600);
+    } catch (err: any) {
+      const message =
+        err?.response?.data?.message ??
+        err?.message ??
+        'Something went wrong. Please try again.';
+      Alert.alert('Update failed', message);
+    }
   };
 
   return (

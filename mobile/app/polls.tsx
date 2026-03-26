@@ -1,13 +1,17 @@
 import React, { useState, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  FlatList, Dimensions, Modal, Pressable, Animated,
+  FlatList, Dimensions, Modal, Pressable, Animated, ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import SuccessToast from '../src/components/common/SuccessToast';
+import { useQueryClient, useMutation } from '@tanstack/react-query';
+import { usePolls, useCreatePoll, Poll } from '../src/services/queries';
+import { api } from '../src/services/api';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -46,140 +50,6 @@ const DURATIONS = [
   { label: '7d', value: 168 },
 ];
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
-type PollOption = { id: string; text: string; votes: number };
-type Poll = {
-  id: string;
-  question: string;
-  options: PollOption[];
-  category: string;
-  author: string;
-  authorInitial: string;
-  gradIdx: number;
-  totalVotes: number;
-  timeLeft: string;
-  isAnonymous: boolean;
-  isTrending: boolean;
-  velocity?: string;
-  comments: number;
-  topComment?: string;
-  createdAgo: string;
-};
-
-const POLLS: Poll[] = [
-  {
-    id: '1', question: 'Should the library extend hours during finals?',
-    options: [
-      { id: 'a', text: 'Yes, until 2 AM', votes: 342 },
-      { id: 'b', text: 'Yes, 24/7 access', votes: 518 },
-      { id: 'c', text: 'Current hours are fine', votes: 89 },
-      { id: 'd', text: 'Add more study rooms instead', votes: 156 },
-    ],
-    category: 'Academics', author: 'StudyGuru', authorInitial: 'S', gradIdx: 0,
-    totalVotes: 1105, timeLeft: '18h left', isAnonymous: false, isTrending: true,
-    velocity: 'Rising', comments: 47, topComment: '"24/7 is the only answer during finals week"',
-    createdAgo: '3h ago',
-  },
-  {
-    id: '2', question: 'Best dining hall on campus?',
-    options: [
-      { id: 'a', text: 'Hart House', votes: 287 },
-      { id: 'b', text: 'New College', votes: 195 },
-      { id: 'c', text: 'Chestnut Residence', votes: 162 },
-      { id: 'd', text: 'They\'re all mid', votes: 401 },
-    ],
-    category: 'Food', author: 'FoodieAnon', authorInitial: 'F', gradIdx: 1,
-    totalVotes: 1045, timeLeft: '2d left', isAnonymous: true, isTrending: true,
-    velocity: 'Hot', comments: 83, topComment: '"New College lowkey slaps at breakfast"',
-    createdAgo: '6h ago',
-  },
-  {
-    id: '3', question: 'Would you support a mental health day policy?',
-    options: [
-      { id: 'a', text: 'Absolutely yes', votes: 723 },
-      { id: 'b', text: 'Only once per semester', votes: 214 },
-      { id: 'c', text: 'No, too easy to abuse', votes: 98 },
-    ],
-    category: 'Campus Life', author: 'WellnessFirst', authorInitial: 'W', gradIdx: 2,
-    totalVotes: 1035, timeLeft: '5h left', isAnonymous: false, isTrending: true,
-    velocity: 'Surging', comments: 126,
-    topComment: '"Every university should have this, not even debatable"',
-    createdAgo: '12h ago',
-  },
-  {
-    id: '4', question: 'Most overrated course at UofT?',
-    options: [
-      { id: 'a', text: 'PSY100', votes: 156 },
-      { id: 'b', text: 'ECO101', votes: 203 },
-      { id: 'c', text: 'CSC108', votes: 67 },
-      { id: 'd', text: 'HIS101', votes: 44 },
-      { id: 'e', text: 'None, they\'re all great', votes: 29 },
-    ],
-    category: 'Academics', author: 'HonestStudent', authorInitial: 'H', gradIdx: 3,
-    totalVotes: 499, timeLeft: '1d left', isAnonymous: true, isTrending: false,
-    comments: 34, topComment: '"ECO101 and it\'s not even close"',
-    createdAgo: '1d ago',
-  },
-  {
-    id: '5', question: 'Best off-campus housing area?',
-    options: [
-      { id: 'a', text: 'Annex', votes: 189 },
-      { id: 'b', text: 'Kensington', votes: 234 },
-      { id: 'c', text: 'Harbord Village', votes: 112 },
-      { id: 'd', text: 'Chinatown', votes: 167 },
-    ],
-    category: 'Housing', author: 'ApartmentHunter', authorInitial: 'A', gradIdx: 4,
-    totalVotes: 702, timeLeft: '3d left', isAnonymous: false, isTrending: false,
-    comments: 21, createdAgo: '2d ago',
-  },
-  {
-    id: '6', question: 'Should campus events be alcohol-free?',
-    options: [
-      { id: 'a', text: 'Yes, more inclusive', votes: 310 },
-      { id: 'b', text: 'No, we\'re adults', votes: 445 },
-      { id: 'c', text: 'Offer both options', votes: 378 },
-    ],
-    category: 'Events', author: 'Anonymous', authorInitial: '?', gradIdx: 5,
-    totalVotes: 1133, timeLeft: '10h left', isAnonymous: true, isTrending: false,
-    velocity: 'Controversial', comments: 91,
-    topComment: '"The real question is why are tickets so expensive"',
-    createdAgo: '8h ago',
-  },
-  {
-    id: '7', question: 'Is the campus Wi-Fi getting worse?',
-    options: [
-      { id: 'a', text: 'Definitely worse', votes: 612 },
-      { id: 'b', text: 'Same as always', votes: 145 },
-      { id: 'c', text: 'Actually improved', votes: 33 },
-    ],
-    category: 'Campus Life', author: 'TechSupport', authorInitial: 'T', gradIdx: 0,
-    totalVotes: 790, timeLeft: '6h left', isAnonymous: false, isTrending: false,
-    comments: 55, topComment: '"Robarts basement is a dead zone"',
-    createdAgo: '4h ago',
-  },
-  {
-    id: '8', question: 'Confession: I enjoy 8 AM lectures',
-    options: [
-      { id: 'a', text: 'Same tbh', votes: 67 },
-      { id: 'b', text: 'Psychopath behavior', votes: 534 },
-      { id: 'c', text: 'Depends on the prof', votes: 289 },
-    ],
-    category: 'Confessions', author: 'Anonymous', authorInitial: '?', gradIdx: 1,
-    totalVotes: 890, timeLeft: '1d left', isAnonymous: true, isTrending: false,
-    comments: 72, topComment: '"Seek help immediately"',
-    createdAgo: '14h ago',
-  },
-];
-
-const TRENDING_POLLS = POLLS.filter((p) => p.isTrending);
-
-// ─── Hot poll rankings ────────────────────────────────────────────────────────
-const HOT_RANKINGS = [
-  { id: '1', label: 'Most Voted Today', pollId: '3', question: 'Mental health day policy?', votes: 1035, icon: 'trophy-outline' as const, color: '#F1973B' },
-  { id: '2', label: 'Fastest Growing', pollId: '1', question: 'Library hours during finals?', votes: 1105, icon: 'trending-up-outline' as const, color: '#3DAB73' },
-  { id: '3', label: 'Most Controversial', pollId: '6', question: 'Alcohol-free campus events?', votes: 1133, icon: 'flash-outline' as const, color: '#E655C5' },
-];
-
 // ─── Velocity badge colors ────────────────────────────────────────────────────
 const VELOCITY_COLORS: Record<string, string> = {
   Rising: '#4B50F8',
@@ -188,23 +58,62 @@ const VELOCITY_COLORS: Record<string, string> = {
   Controversial: '#C43030',
 };
 
-// ─── Helper ───────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function pct(votes: number, total: number) {
   if (total === 0) return 0;
   return Math.round((votes / total) * 100);
 }
 
+/** Derive a deterministic avatar gradient index from an id string. */
+function gradIdxFromId(id: string): number {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0;
+  return Math.abs(hash) % AVATAR_GRADS.length;
+}
+
+/** Friendly time-remaining string from an ISO date string. */
+function timeLeftStr(endsAt?: string): string {
+  if (!endsAt) return '';
+  const diff = new Date(endsAt).getTime() - Date.now();
+  if (diff <= 0) return 'Ended';
+  const hours = Math.floor(diff / (1000 * 60 * 60));
+  if (hours < 1) return `${Math.ceil(diff / (1000 * 60))}m left`;
+  if (hours < 24) return `${hours}h left`;
+  const days = Math.floor(hours / 24);
+  return `${days}d left`;
+}
+
+/** Friendly relative time string from createdAt. */
+function timeAgoStr(createdAt: string): string {
+  const diff = Date.now() - new Date(createdAt).getTime();
+  const mins = Math.floor(diff / (1000 * 60));
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+/** Determine a velocity label based on vote patterns. */
+function velocityLabel(poll: Poll): string | undefined {
+  if (poll.totalVotes > 1000) return 'Hot';
+  if (poll.totalVotes > 500) return 'Rising';
+  return undefined;
+}
+
 // ─── Trending poll card (horizontal carousel) ────────────────────────────────
 function TrendingPollCard({ poll, onPress }: { poll: Poll; onPress: () => void }) {
-  const maxVotes = Math.max(...poll.options.map((o) => o.votes));
+  const maxVotes = Math.max(...poll.options.map((o) => o.voteCount));
+  const velocity = velocityLabel(poll);
   return (
     <TouchableOpacity activeOpacity={0.82} onPress={onPress} style={tp.shadow}>
       <View style={tp.card}>
         {/* velocity badge */}
-        {poll.velocity && (
-          <View style={[tp.velocityBadge, { backgroundColor: (VELOCITY_COLORS[poll.velocity] ?? T.accentBlue) + '14' }]}>
-            <Ionicons name="trending-up" size={10} color={VELOCITY_COLORS[poll.velocity] ?? T.accentBlue} />
-            <Text style={[tp.velocityText, { color: VELOCITY_COLORS[poll.velocity] ?? T.accentBlue }]}>{poll.velocity}</Text>
+        {velocity && (
+          <View style={[tp.velocityBadge, { backgroundColor: (VELOCITY_COLORS[velocity] ?? T.accentBlue) + '14' }]}>
+            <Ionicons name="trending-up" size={10} color={VELOCITY_COLORS[velocity] ?? T.accentBlue} />
+            <Text style={[tp.velocityText, { color: VELOCITY_COLORS[velocity] ?? T.accentBlue }]}>{velocity}</Text>
           </View>
         )}
         <Text style={tp.question} numberOfLines={2}>{poll.question}</Text>
@@ -213,15 +122,15 @@ function TrendingPollCard({ poll, onPress }: { poll: Poll; onPress: () => void }
           {poll.options.slice(0, 3).map((opt) => (
             <View key={opt.id} style={tp.barRow}>
               <View style={tp.barTrack}>
-                <View style={[tp.barFill, { width: `${pct(opt.votes, poll.totalVotes)}%` }]} />
+                <View style={[tp.barFill, { width: `${pct(opt.voteCount, poll.totalVotes)}%` }]} />
               </View>
-              <Text style={tp.barPct}>{pct(opt.votes, poll.totalVotes)}%</Text>
+              <Text style={tp.barPct}>{pct(opt.voteCount, poll.totalVotes)}%</Text>
             </View>
           ))}
         </View>
         <View style={tp.footer}>
           <Text style={tp.votes}>{poll.totalVotes.toLocaleString()} votes</Text>
-          <Text style={tp.timeLeft}>{poll.timeLeft}</Text>
+          <Text style={tp.timeLeft}>{timeLeftStr(poll.endsAt)}</Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -262,29 +171,33 @@ const tp = StyleSheet.create({
 });
 
 // ─── Poll feed card ──────────────────────────────────────────────────────────
-function PollCard({ poll, voted, onVote, onPress }: {
-  poll: Poll; voted: string | null;
+function PollCard({ poll, onVote, onPress }: {
+  poll: Poll;
   onVote: (pollId: string, optId: string) => void;
   onPress: () => void;
 }) {
-  const hasVoted = voted !== null;
-  const winnerVotes = Math.max(...poll.options.map((o) => o.votes));
+  const hasVoted = (poll.userVotes?.length ?? 0) > 0;
+  const winnerVotes = Math.max(...poll.options.map((o) => o.voteCount));
+  const gIdx = gradIdxFromId(poll.id);
+  const velocity = velocityLabel(poll);
+  const authorInitial = poll.isAnonymous ? '?' : (poll.author.handle?.[0]?.toUpperCase() ?? '?');
+  const authorName = poll.isAnonymous ? 'Anonymous' : poll.author.handle;
 
   return (
     <TouchableOpacity activeOpacity={0.88} onPress={onPress} style={pc.shadow}>
       <View style={pc.card}>
         {/* author row */}
         <View style={pc.authorRow}>
-          <LinearGradient colors={AVATAR_GRADS[poll.gradIdx % AVATAR_GRADS.length]} style={pc.avatar}>
-            <Text style={pc.avatarLetter}>{poll.authorInitial}</Text>
+          <LinearGradient colors={AVATAR_GRADS[gIdx % AVATAR_GRADS.length]} style={pc.avatar}>
+            <Text style={pc.avatarLetter}>{authorInitial}</Text>
           </LinearGradient>
           <View style={{ flex: 1 }}>
-            <Text style={pc.authorName}>{poll.isAnonymous ? 'Anonymous' : poll.author}</Text>
+            <Text style={pc.authorName}>{authorName}</Text>
             <View style={pc.metaRow}>
               <View style={[pc.catPill, { backgroundColor: T.accentOrange + '10', borderColor: T.accentOrange + '25' }]}>
-                <Text style={[pc.catPillText, { color: T.accentOrange }]}>{poll.category}</Text>
+                <Text style={[pc.catPillText, { color: T.accentOrange }]}>{poll.type === 'multiple' ? 'Multi' : 'Single'}</Text>
               </View>
-              <Text style={pc.time}>{poll.createdAgo}</Text>
+              <Text style={pc.time}>{timeAgoStr(poll.createdAt)}</Text>
             </View>
           </View>
           {poll.isAnonymous && (
@@ -301,9 +214,9 @@ function PollCard({ poll, voted, onVote, onPress }: {
         {/* options */}
         <View style={pc.options}>
           {poll.options.map((opt) => {
-            const p = pct(opt.votes, poll.totalVotes);
-            const isWinner = opt.votes === winnerVotes && hasVoted;
-            const isSelected = voted === opt.id;
+            const p = pct(opt.voteCount, poll.totalVotes);
+            const isWinner = opt.voteCount === winnerVotes && hasVoted;
+            const isSelected = poll.userVotes?.includes(opt.id) ?? false;
             return (
               <TouchableOpacity
                 key={opt.id}
@@ -343,28 +256,16 @@ function PollCard({ poll, voted, onVote, onPress }: {
             <Text style={pc.footerText}>{poll.totalVotes.toLocaleString()} votes</Text>
           </View>
           <View style={pc.footerLeft}>
-            <Ionicons name="chatbubble-outline" size={12} color={T.textMuted} />
-            <Text style={pc.footerText}>{poll.comments}</Text>
-          </View>
-          <View style={pc.footerLeft}>
             <Ionicons name="time-outline" size={12} color={T.textMuted} />
-            <Text style={pc.footerText}>{poll.timeLeft}</Text>
+            <Text style={pc.footerText}>{timeLeftStr(poll.endsAt)}</Text>
           </View>
-          {poll.velocity && (
-            <View style={[pc.velocityPill, { backgroundColor: (VELOCITY_COLORS[poll.velocity] ?? T.accentBlue) + '12' }]}>
-              <Ionicons name="trending-up" size={10} color={VELOCITY_COLORS[poll.velocity] ?? T.accentBlue} />
-              <Text style={[pc.velocityLabel, { color: VELOCITY_COLORS[poll.velocity] ?? T.accentBlue }]}>{poll.velocity}</Text>
+          {velocity && (
+            <View style={[pc.velocityPill, { backgroundColor: (VELOCITY_COLORS[velocity] ?? T.accentBlue) + '12' }]}>
+              <Ionicons name="trending-up" size={10} color={VELOCITY_COLORS[velocity] ?? T.accentBlue} />
+              <Text style={[pc.velocityLabel, { color: VELOCITY_COLORS[velocity] ?? T.accentBlue }]}>{velocity}</Text>
             </View>
           )}
         </View>
-
-        {/* top comment preview */}
-        {poll.topComment && (
-          <View style={pc.commentPreview}>
-            <Ionicons name="chatbubble-ellipses-outline" size={11} color={T.accentPurple} />
-            <Text style={pc.commentText} numberOfLines={1}>{poll.topComment}</Text>
-          </View>
-        )}
       </View>
     </TouchableOpacity>
   );
@@ -420,53 +321,6 @@ const pc = StyleSheet.create({
     paddingHorizontal: 7, paddingVertical: 2, borderRadius: 99, marginLeft: 'auto',
   },
   velocityLabel: { fontSize: 9, fontWeight: '700' },
-  commentPreview: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: T.accentPurple + '08', borderRadius: 10,
-    paddingHorizontal: 10, paddingVertical: 8,
-  },
-  commentText: { flex: 1, fontSize: 11, color: T.textSecondary, fontStyle: 'italic' },
-});
-
-// ─── Hot ranking card ─────────────────────────────────────────────────────────
-function HotRankingCard({ item, onPress }: { item: typeof HOT_RANKINGS[0]; onPress: () => void }) {
-  return (
-    <TouchableOpacity activeOpacity={0.82} onPress={onPress} style={hr.shadow}>
-      <View style={hr.card}>
-        <View style={[hr.iconCircle, { backgroundColor: item.color + '14' }]}>
-          <Ionicons name={item.icon} size={16} color={item.color} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={hr.label}>{item.label}</Text>
-          <Text style={hr.question} numberOfLines={1}>{item.question}</Text>
-        </View>
-        <View style={hr.voteBadge}>
-          <Text style={hr.voteCount}>{item.votes.toLocaleString()}</Text>
-          <Ionicons name="chevron-forward" size={12} color={T.textMuted} />
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-const hr = StyleSheet.create({
-  shadow: {
-    borderRadius: 16,
-    shadowColor: '#5B608C', shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.06, shadowRadius: 10, elevation: 3,
-  },
-  card: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    borderRadius: 16, overflow: 'hidden',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.55)',
-    backgroundColor: 'rgba(255,255,255,0.68)',
-    padding: 14,
-  },
-  iconCircle: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  label: { fontSize: 10, fontWeight: '700', color: T.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
-  question: { fontSize: 13, fontWeight: '600', color: T.textPrimary, marginTop: 1 },
-  voteBadge: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  voteCount: { fontSize: 12, fontWeight: '700', color: T.textSecondary },
 });
 
 // ─── Section header ───────────────────────────────────────────────────────────
@@ -511,15 +365,39 @@ function CreatePollSheet({ visible, onClose }: { visible: boolean; onClose: () =
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
+  const createPollMutation = useCreatePoll();
+
   const addOption = () => { if (options.length < 6) setOptions([...options, '']); };
   const removeOption = (i: number) => { if (options.length > 2) setOptions(options.filter((_, idx) => idx !== i)); };
   const updateOption = (i: number, val: string) => { const copy = [...options]; copy[i] = val; setOptions(copy); };
 
-  const canSubmit = question.trim().length > 5 && options.filter((o) => o.trim()).length >= 2;
+  const canSubmit = question.trim().length > 5 && options.filter((o) => o.trim()).length >= 2 && !createPollMutation.isPending;
 
   const handlePost = () => {
-    setShowConfirm(true);
-    setTimeout(() => { setShowConfirm(false); onClose(); setQuestion(''); setOptions(['', '']); }, 1800);
+    const endsAt = new Date(Date.now() + duration * 60 * 60 * 1000).toISOString();
+    createPollMutation.mutate(
+      {
+        question: question.trim(),
+        options: options.filter((o) => o.trim()),
+        type: 'single',
+        isAnonymous,
+        endsAt,
+      },
+      {
+        onSuccess: () => {
+          setShowConfirm(true);
+          setTimeout(() => {
+            setShowConfirm(false);
+            onClose();
+            setQuestion('');
+            setOptions(['', '']);
+            setIsAnonymous(false);
+            setDuration(24);
+            setCategory('Random');
+          }, 1800);
+        },
+      },
+    );
   };
 
   return (
@@ -627,8 +505,14 @@ function CreatePollSheet({ visible, onClose }: { visible: boolean; onClose: () =
               style={{ marginTop: 20, borderRadius: 16, overflow: 'hidden', opacity: canSubmit ? 1 : 0.4 }}
             >
               <LinearGradient colors={CTA} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={cs.submitBtn}>
-                <Ionicons name="paper-plane" size={16} color="#fff" />
-                <Text style={cs.submitText}>Post Poll</Text>
+                {createPollMutation.isPending ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="paper-plane" size={16} color="#fff" />
+                    <Text style={cs.submitText}>Post Poll</Text>
+                  </>
+                )}
               </LinearGradient>
             </TouchableOpacity>
 
@@ -730,14 +614,18 @@ const cs = StyleSheet.create({
 });
 
 // ─── Poll detail sheet ────────────────────────────────────────────────────────
-function PollDetailSheet({ poll, visible, onClose, voted, onVote }: {
+function PollDetailSheet({ poll, visible, onClose, onVote }: {
   poll: Poll | null; visible: boolean; onClose: () => void;
-  voted: string | null; onVote: (pollId: string, optId: string) => void;
+  onVote: (pollId: string, optId: string) => void;
 }) {
   if (!poll) return null;
-  const hasVoted = voted !== null;
-  const winnerVotes = Math.max(...poll.options.map((o) => o.votes));
-  const sortedOptions = [...poll.options].sort((a, b) => b.votes - a.votes);
+  const hasVoted = (poll.userVotes?.length ?? 0) > 0;
+  const winnerVotes = Math.max(...poll.options.map((o) => o.voteCount));
+  const sortedOptions = [...poll.options].sort((a, b) => b.voteCount - a.voteCount);
+  const gIdx = gradIdxFromId(poll.id);
+  const velocity = velocityLabel(poll);
+  const authorInitial = poll.isAnonymous ? '?' : (poll.author.handle?.[0]?.toUpperCase() ?? '?');
+  const authorName = poll.isAnonymous ? 'Anonymous' : poll.author.handle;
 
   return (
     <Modal visible={visible} transparent animationType="slide">
@@ -748,36 +636,36 @@ function PollDetailSheet({ poll, visible, onClose, voted, onVote }: {
           {/* header */}
           <View style={ds.headerRow}>
             <View style={[ds.catPill, { backgroundColor: T.accentOrange + '12' }]}>
-              <Text style={[ds.catPillText, { color: T.accentOrange }]}>{poll.category}</Text>
+              <Text style={[ds.catPillText, { color: T.accentOrange }]}>{poll.type === 'multiple' ? 'Multi' : 'Single'}</Text>
             </View>
-            {poll.velocity && (
-              <View style={[ds.catPill, { backgroundColor: (VELOCITY_COLORS[poll.velocity] ?? T.accentBlue) + '12' }]}>
-                <Ionicons name="trending-up" size={10} color={VELOCITY_COLORS[poll.velocity] ?? T.accentBlue} />
-                <Text style={[ds.catPillText, { color: VELOCITY_COLORS[poll.velocity] ?? T.accentBlue }]}>
-                  {poll.velocity}
+            {velocity && (
+              <View style={[ds.catPill, { backgroundColor: (VELOCITY_COLORS[velocity] ?? T.accentBlue) + '12' }]}>
+                <Ionicons name="trending-up" size={10} color={VELOCITY_COLORS[velocity] ?? T.accentBlue} />
+                <Text style={[ds.catPillText, { color: VELOCITY_COLORS[velocity] ?? T.accentBlue }]}>
+                  {velocity}
                 </Text>
               </View>
             )}
-            <Text style={ds.timeLeft}>{poll.timeLeft}</Text>
+            <Text style={ds.timeLeft}>{timeLeftStr(poll.endsAt)}</Text>
           </View>
 
           <Text style={ds.question}>{poll.question}</Text>
 
           {/* author */}
           <View style={ds.authorRow}>
-            <LinearGradient colors={AVATAR_GRADS[poll.gradIdx % AVATAR_GRADS.length]} style={ds.avatar}>
-              <Text style={ds.avatarLetter}>{poll.authorInitial}</Text>
+            <LinearGradient colors={AVATAR_GRADS[gIdx % AVATAR_GRADS.length]} style={ds.avatar}>
+              <Text style={ds.avatarLetter}>{authorInitial}</Text>
             </LinearGradient>
-            <Text style={ds.authorName}>{poll.isAnonymous ? 'Anonymous' : poll.author}</Text>
-            <Text style={ds.createdAgo}>{poll.createdAgo}</Text>
+            <Text style={ds.authorName}>{authorName}</Text>
+            <Text style={ds.createdAgo}>{timeAgoStr(poll.createdAt)}</Text>
           </View>
 
           {/* results */}
           <View style={ds.resultsWrap}>
             {sortedOptions.map((opt, i) => {
-              const p = pct(opt.votes, poll.totalVotes);
+              const p = pct(opt.voteCount, poll.totalVotes);
               const isWinner = i === 0;
-              const isSelected = voted === opt.id;
+              const isSelected = poll.userVotes?.includes(opt.id) ?? false;
               return (
                 <TouchableOpacity
                   key={opt.id}
@@ -804,9 +692,9 @@ function PollDetailSheet({ poll, visible, onClose, voted, onVote }: {
                     </View>
                     <View style={ds.resultMeta}>
                       <Text style={[ds.resultPct, isWinner && hasVoted && { color: T.accentPurple }]}>
-                        {hasVoted ? `${p}%` : '—'}
+                        {hasVoted ? `${p}%` : '\u2014'}
                       </Text>
-                      <Text style={ds.resultVotes}>{hasVoted ? `${opt.votes} votes` : ''}</Text>
+                      <Text style={ds.resultVotes}>{hasVoted ? `${opt.voteCount} votes` : ''}</Text>
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -821,25 +709,14 @@ function PollDetailSheet({ poll, visible, onClose, voted, onVote }: {
               <Text style={ds.statLabel}>Total Votes</Text>
             </View>
             <View style={ds.statBox}>
-              <Text style={ds.statNum}>{poll.comments}</Text>
-              <Text style={ds.statLabel}>Comments</Text>
-            </View>
-            <View style={ds.statBox}>
               <Text style={ds.statNum}>{poll.options.length}</Text>
               <Text style={ds.statLabel}>Options</Text>
             </View>
-          </View>
-
-          {/* top comment */}
-          {poll.topComment && (
-            <View style={ds.topComment}>
-              <View style={ds.topCommentHeader}>
-                <Ionicons name="chatbubble-ellipses" size={12} color={T.accentPurple} />
-                <Text style={ds.topCommentLabel}>Top Comment</Text>
-              </View>
-              <Text style={ds.topCommentText}>{poll.topComment}</Text>
+            <View style={ds.statBox}>
+              <Text style={ds.statNum}>{poll.status === 'active' ? 'Active' : 'Closed'}</Text>
+              <Text style={ds.statLabel}>Status</Text>
             </View>
-          )}
+          </View>
 
           {/* CTA */}
           <TouchableOpacity activeOpacity={0.85} style={{ borderRadius: 16, overflow: 'hidden', marginTop: 16 }}>
@@ -899,13 +776,6 @@ const ds = StyleSheet.create({
   },
   statNum: { fontSize: 17, fontWeight: '800', color: T.textPrimary },
   statLabel: { fontSize: 10, fontWeight: '600', color: T.textMuted, marginTop: 2 },
-  topComment: {
-    marginTop: 16, backgroundColor: T.accentPurple + '08',
-    borderRadius: 14, padding: 14, gap: 6,
-  },
-  topCommentHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  topCommentLabel: { fontSize: 11, fontWeight: '700', color: T.accentPurple },
-  topCommentText: { fontSize: 12, color: T.textSecondary, fontStyle: 'italic', lineHeight: 17 },
   ctaBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     paddingVertical: 16, borderRadius: 16,
@@ -919,20 +789,55 @@ const ds = StyleSheet.create({
 export default function PollsScreen() {
   const router = useRouter();
   const [selectedCat, setSelectedCat] = useState('All');
-  const [votedMap, setVotedMap] = useState<Record<string, string>>({});
   const [showCreate, setShowCreate] = useState(false);
   const [detailPoll, setDetailPoll] = useState<Poll | null>(null);
   const [showHot, setShowHot] = useState(false);
 
+  // ─── API hooks ─────────────────────────────────────────
+  const { data, fetchNextPage, hasNextPage, isLoading, isFetchingNextPage, refetch, isRefetching } = usePolls();
+  const polls = data?.pages.flatMap((p) => p.items) ?? [];
+
+  // Trending = polls sorted by totalVotes, top 5
+  const trendingPolls = [...polls].sort((a, b) => b.totalVotes - a.totalVotes).slice(0, 5);
+
+  // Hot rankings = top 3 polls by total votes
+  const hotRankings = [...polls]
+    .sort((a, b) => b.totalVotes - a.totalVotes)
+    .slice(0, 3)
+    .map((p, i) => ({
+      id: p.id,
+      label: i === 0 ? 'Most Voted' : i === 1 ? 'Fastest Growing' : 'Most Controversial',
+      question: p.question,
+      votes: p.totalVotes,
+      icon: (i === 0 ? 'trophy-outline' : i === 1 ? 'trending-up-outline' : 'flash-outline') as 'trophy-outline' | 'trending-up-outline' | 'flash-outline',
+      color: i === 0 ? '#F1973B' : i === 1 ? '#3DAB73' : '#E655C5',
+    }));
+
+  // Vote mutation -- uses api directly so pollId is always correct
+  const queryClient = useQueryClient();
+  const voteMutation = useMutation({
+    mutationFn: ({ pollId, optionIds }: { pollId: string; optionIds: string[] }) =>
+      api.post(`/polls/${pollId}/vote`, { optionIds }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['poll', variables.pollId] });
+      queryClient.invalidateQueries({ queryKey: ['polls'] });
+    },
+  });
+
   const [voteToast, setVoteToast] = useState(false);
   const handleVote = useCallback((pollId: string, optId: string) => {
-    setVotedMap((prev) => ({ ...prev, [pollId]: optId }));
-    setVoteToast(true);
-  }, []);
+    voteMutation.mutate(
+      { pollId, optionIds: [optId] },
+      {
+        onSuccess: () => {
+          setVoteToast(true);
+        },
+      },
+    );
+  }, [voteMutation]);
 
-  const filteredPolls = selectedCat === 'All'
-    ? POLLS
-    : POLLS.filter((p) => p.category === selectedCat);
+  // Filter polls by status (only show active)
+  const activePolls = polls.filter((p) => p.status === 'active');
 
   return (
     <LinearGradient colors={BG} style={{ flex: 1 }}>
@@ -948,85 +853,131 @@ export default function PollsScreen() {
           </TouchableOpacity>
         </View>
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
-          {/* ─── Category chips ──────────────────────────────── */}
+        {isLoading ? (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <ActivityIndicator size="large" color={T.accentPurple} />
+            <Text style={{ marginTop: 12, fontSize: 13, color: T.textMuted }}>Loading polls...</Text>
+          </View>
+        ) : (
           <ScrollView
-            horizontal showsHorizontalScrollIndicator={false}
-            contentContainerStyle={ui.catRow}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 40 }}
+            refreshControl={
+              <RefreshControl refreshing={isRefetching} onRefresh={() => refetch()} tintColor={T.accentPurple} />
+            }
           >
-            {CATEGORIES.map((cat) => (
-              <TouchableOpacity
-                key={cat}
-                onPress={() => setSelectedCat(cat)}
-                style={[ui.catChip, selectedCat === cat && ui.catChipActive]}
-              >
-                <Text style={[ui.catChipText, selectedCat === cat && ui.catChipTextActive]}>{cat}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+            {/* ─── Category chips ──────────────────────────────── */}
+            <ScrollView
+              horizontal showsHorizontalScrollIndicator={false}
+              contentContainerStyle={ui.catRow}
+            >
+              {CATEGORIES.map((cat) => (
+                <TouchableOpacity
+                  key={cat}
+                  onPress={() => setSelectedCat(cat)}
+                  style={[ui.catChip, selectedCat === cat && ui.catChipActive]}
+                >
+                  <Text style={[ui.catChipText, selectedCat === cat && ui.catChipTextActive]}>{cat}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
 
-          {/* ─── Hot rankings (expandable) ────────────────────── */}
-          <TouchableOpacity activeOpacity={0.7} onPress={() => setShowHot(!showHot)} style={ui.hotToggle}>
-            <View style={[ui.hotIcon, showHot && { backgroundColor: T.accentOrange + '18' }]}>
-              <Ionicons name="flame" size={14} color={showHot ? T.accentOrange : T.textMuted} />
-            </View>
-            <Text style={[ui.hotLabel, showHot && { color: T.accentOrange }]}>Hot Rankings</Text>
-            <Ionicons name={showHot ? 'chevron-up' : 'chevron-down'} size={14} color={T.textMuted} />
-          </TouchableOpacity>
-          {showHot && (
-            <View style={{ paddingHorizontal: 22, gap: 8, marginBottom: 20 }}>
-              {HOT_RANKINGS.map((item) => (
-                <HotRankingCard
-                  key={item.id}
-                  item={item}
-                  onPress={() => {
-                    const p = POLLS.find((x) => x.id === item.pollId);
-                    if (p) setDetailPoll(p);
-                  }}
+            {/* ─── Hot rankings (expandable) ────────────────────── */}
+            {hotRankings.length > 0 && (
+              <>
+                <TouchableOpacity activeOpacity={0.7} onPress={() => setShowHot(!showHot)} style={ui.hotToggle}>
+                  <View style={[ui.hotIcon, showHot && { backgroundColor: T.accentOrange + '18' }]}>
+                    <Ionicons name="flame" size={14} color={showHot ? T.accentOrange : T.textMuted} />
+                  </View>
+                  <Text style={[ui.hotLabel, showHot && { color: T.accentOrange }]}>Hot Rankings</Text>
+                  <Ionicons name={showHot ? 'chevron-up' : 'chevron-down'} size={14} color={T.textMuted} />
+                </TouchableOpacity>
+                {showHot && (
+                  <View style={{ paddingHorizontal: 22, gap: 8, marginBottom: 20 }}>
+                    {hotRankings.map((item) => (
+                      <TouchableOpacity
+                        key={item.id}
+                        activeOpacity={0.82}
+                        onPress={() => {
+                          const p = polls.find((x) => x.id === item.id);
+                          if (p) setDetailPoll(p);
+                        }}
+                        style={hr.shadow}
+                      >
+                        <View style={hr.card}>
+                          <View style={[hr.iconCircle, { backgroundColor: item.color + '14' }]}>
+                            <Ionicons name={item.icon} size={16} color={item.color} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={hr.label}>{item.label}</Text>
+                            <Text style={hr.question} numberOfLines={1}>{item.question}</Text>
+                          </View>
+                          <View style={hr.voteBadge}>
+                            <Text style={hr.voteCount}>{item.votes.toLocaleString()}</Text>
+                            <Ionicons name="chevron-forward" size={12} color={T.textMuted} />
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </>
+            )}
+
+            {/* ─── Trending carousel ───────────────────────────── */}
+            {selectedCat === 'All' && trendingPolls.length > 0 && (
+              <>
+                <SectionHeader title="Trending Now" icon="trending-up-outline" onSeeAll={() => {}} />
+                <ScrollView
+                  horizontal showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ paddingHorizontal: 22, gap: 12, marginTop: 10, marginBottom: 22 }}
+                >
+                  {trendingPolls.map((poll) => (
+                    <TrendingPollCard key={poll.id} poll={poll} onPress={() => setDetailPoll(poll)} />
+                  ))}
+                </ScrollView>
+              </>
+            )}
+
+            {/* ─── Poll feed ───────────────────────────────────── */}
+            <SectionHeader title={selectedCat === 'All' ? 'All Polls' : selectedCat} icon="stats-chart-outline" />
+            <View style={{ gap: 14, marginTop: 10 }}>
+              {activePolls.map((poll) => (
+                <PollCard
+                  key={poll.id}
+                  poll={poll}
+                  onVote={handleVote}
+                  onPress={() => setDetailPoll(poll)}
                 />
               ))}
             </View>
-          )}
 
-          {/* ─── Trending carousel ───────────────────────────── */}
-          {selectedCat === 'All' && (
-            <>
-              <SectionHeader title="Trending Now" icon="trending-up-outline" onSeeAll={() => {}} />
-              <ScrollView
-                horizontal showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ paddingHorizontal: 22, gap: 12, marginTop: 10, marginBottom: 22 }}
+            {/* Load more */}
+            {hasNextPage && (
+              <TouchableOpacity
+                onPress={() => fetchNextPage()}
+                activeOpacity={0.7}
+                style={{ alignItems: 'center', paddingVertical: 20 }}
               >
-                {TRENDING_POLLS.map((poll) => (
-                  <TrendingPollCard key={poll.id} poll={poll} onPress={() => setDetailPoll(poll)} />
-                ))}
-              </ScrollView>
-            </>
-          )}
-
-          {/* ─── Poll feed ───────────────────────────────────── */}
-          <SectionHeader title={selectedCat === 'All' ? 'All Polls' : selectedCat} icon="stats-chart-outline" />
-          <View style={{ gap: 14, marginTop: 10 }}>
-            {filteredPolls.map((poll) => (
-              <PollCard
-                key={poll.id}
-                poll={poll}
-                voted={votedMap[poll.id] ?? null}
-                onVote={handleVote}
-                onPress={() => setDetailPoll(poll)}
-              />
-            ))}
-          </View>
-
-          {filteredPolls.length === 0 && (
-            <View style={ui.emptyWrap}>
-              <Ionicons name="stats-chart-outline" size={40} color={T.textMuted + '40'} />
-              <Text style={ui.emptyText}>No polls in this category yet</Text>
-              <TouchableOpacity onPress={() => setShowCreate(true)}>
-                <Text style={ui.emptyAction}>Be the first to create one</Text>
+                {isFetchingNextPage ? (
+                  <ActivityIndicator size="small" color={T.accentPurple} />
+                ) : (
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: T.accentBlue }}>Load more polls</Text>
+                )}
               </TouchableOpacity>
-            </View>
-          )}
-        </ScrollView>
+            )}
+
+            {activePolls.length === 0 && !isLoading && (
+              <View style={ui.emptyWrap}>
+                <Ionicons name="stats-chart-outline" size={40} color={T.textMuted + '40'} />
+                <Text style={ui.emptyText}>No polls in this category yet</Text>
+                <TouchableOpacity onPress={() => setShowCreate(true)}>
+                  <Text style={ui.emptyAction}>Be the first to create one</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </ScrollView>
+        )}
 
         {/* ─── Modals ────────────────────────────────────────── */}
         <CreatePollSheet visible={showCreate} onClose={() => setShowCreate(false)} />
@@ -1034,7 +985,6 @@ export default function PollsScreen() {
           poll={detailPoll}
           visible={!!detailPoll}
           onClose={() => setDetailPoll(null)}
-          voted={detailPoll ? votedMap[detailPoll.id] ?? null : null}
           onVote={handleVote}
         />
       </SafeAreaView>
@@ -1042,6 +992,27 @@ export default function PollsScreen() {
     </LinearGradient>
   );
 }
+
+// ─── Hot ranking card styles ─────────────────────────────────────────────────
+const hr = StyleSheet.create({
+  shadow: {
+    borderRadius: 16,
+    shadowColor: '#5B608C', shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.06, shadowRadius: 10, elevation: 3,
+  },
+  card: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderRadius: 16, overflow: 'hidden',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.55)',
+    backgroundColor: 'rgba(255,255,255,0.68)',
+    padding: 14,
+  },
+  iconCircle: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  label: { fontSize: 10, fontWeight: '700', color: T.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+  question: { fontSize: 13, fontWeight: '600', color: T.textPrimary, marginTop: 1 },
+  voteBadge: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  voteCount: { fontSize: 12, fontWeight: '700', color: T.textSecondary },
+});
 
 // ─── Main UI styles ───────────────────────────────────────────────────────────
 const ui = StyleSheet.create({

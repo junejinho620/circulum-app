@@ -155,6 +155,26 @@ __decorate([
     __metadata("design:type", Array)
 ], User.prototype, "moderationActions", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ type: 'text', nullable: true }),
+    __metadata("design:type", String)
+], User.prototype, "bio", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], User.prototype, "avatarUrl", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ length: 10, nullable: true }),
+    __metadata("design:type", String)
+], User.prototype, "year", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'simple-array', nullable: true }),
+    __metadata("design:type", Array)
+], User.prototype, "interests", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], User.prototype, "pushToken", void 0);
+__decorate([
     (0, typeorm_1.Column)({ nullable: true, type: 'timestamptz' }),
     __metadata("design:type", Date)
 ], User.prototype, "lastSeenAt", void 0);

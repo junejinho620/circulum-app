@@ -23,8 +23,8 @@ let CommunitiesController = class CommunitiesController {
     constructor(service) {
         this.service = service;
     }
-    findAll(user, type) {
-        return this.service.findAll(user.universityId, type);
+    findAll(user, type, limit) {
+        return this.service.findAll(user.universityId, type, Math.min(limit, 100));
     }
     getMyMemberships(user) {
         return this.service.getMyMemberships(user.id, user.universityId);
@@ -44,8 +44,9 @@ __decorate([
     (0, common_1.Get)(),
     __param(0, (0, current_user_decorator_1.CurrentUser)()),
     __param(1, (0, common_1.Query)('type')),
+    __param(2, (0, common_1.Query)('limit', new common_1.DefaultValuePipe(30), common_1.ParseIntPipe)),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [user_entity_1.User, String]),
+    __metadata("design:paramtypes", [user_entity_1.User, String, Number]),
     __metadata("design:returntype", void 0)
 ], CommunitiesController.prototype, "findAll", null);
 __decorate([

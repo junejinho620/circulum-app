@@ -24,16 +24,20 @@ let CommunitiesService = class CommunitiesService {
         this.memberRepo = memberRepo;
         this.dataSource = dataSource;
     }
-    async findAll(universityId, type) {
+    async findAll(universityId, type, limit = 30) {
         const qb = this.communityRepo.createQueryBuilder('c')
             .where('c.universityId = :universityId', { universityId })
             .andWhere('c.isActive = true');
         if (type) {
             qb.andWhere('c.type = :type', { type });
         }
+        if (!type) {
+            qb.andWhere('c.type != :courseType', { courseType: community_entity_1.CommunityType.COURSE });
+        }
         return qb
             .select(['c.id', 'c.name', 'c.slug', 'c.description', 'c.type', 'c.iconUrl', 'c.memberCount', 'c.postCount'])
             .orderBy('c.memberCount', 'DESC')
+            .take(limit)
             .getMany();
     }
     async findOne(id) {

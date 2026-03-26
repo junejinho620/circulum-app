@@ -116,8 +116,21 @@ export default function LoginScreen() {
   }, []);
 
   const handleLogin = async () => {
-    // Design mode: skip auth, navigate straight to app
-    router.replace('/(tabs)/feed');
+    const errs: Record<string, string> = {};
+    if (!email.trim()) errs.email = 'Email is required';
+    if (!password) errs.password = 'Password is required';
+    if (Object.keys(errs).length > 0) { setErrors(errs); return; }
+
+    setLoading(true);
+    try {
+      await login(email.trim(), password);
+      router.replace('/(tabs)/feed');
+    } catch (err: any) {
+      const msg = err?.message || 'Login failed';
+      Alert.alert('Sign In Failed', msg);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

@@ -1,12 +1,23 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert,
   Animated, LayoutAnimation, Platform, UIManager, RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  useConversations,
+  useNotifications,
+  useUnreadNotificationCount,
+  useMarkAllNotificationsRead,
+  Conversation,
+  Notification,
+} from '../../src/services/queries';
+import { SkeletonList } from '../../src/components/common/Skeletons';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -67,7 +78,14 @@ function StackedAvatars({ handles, size = 22 }: { handles: string[]; size?: numb
 }
 
 // ─── Segmented control ──────────────────────────────────────────────────────
-function SegmentedControl({ active, onChange }: { active: 'messages' | 'activity'; onChange: (v: 'messages' | 'activity') => void }) {
+function SegmentedControl({
+  active, onChange, unreadMessages, unreadActivity,
+}: {
+  active: 'messages' | 'activity';
+  onChange: (v: 'messages' | 'activity') => void;
+  unreadMessages: number;
+  unreadActivity: number;
+}) {
   const slideAnim = useRef(new Animated.Value(active === 'messages' ? 0 : 1)).current;
 
   const handlePress = (tab: 'messages' | 'activity') => {
@@ -87,15 +105,15 @@ function SegmentedControl({ active, onChange }: { active: 'messages' | 'activity
         <TouchableOpacity activeOpacity={0.8} onPress={() => handlePress('messages')} style={seg.tab}>
           <Ionicons name="chatbubbles" size={14} color={active === 'messages' ? '#fff' : T.textMuted} />
           <Text style={[seg.tabText, active === 'messages' && seg.tabTextActive]}>Messages</Text>
-          {active !== 'messages' && (
-            <View style={seg.badge}><Text style={seg.badgeText}>3</Text></View>
+          {active !== 'messages' && unreadMessages > 0 && (
+            <View style={seg.badge}><Text style={seg.badgeText}>{unreadMessages}</Text></View>
           )}
         </TouchableOpacity>
         <TouchableOpacity activeOpacity={0.8} onPress={() => handlePress('activity')} style={seg.tab}>
           <Ionicons name="pulse" size={14} color={active === 'activity' ? '#fff' : T.textMuted} />
           <Text style={[seg.tabText, active === 'activity' && seg.tabTextActive]}>Activity</Text>
-          {active !== 'activity' && (
-            <View style={seg.badge}><Text style={seg.badgeText}>9</Text></View>
+          {active !== 'activity' && unreadActivity > 0 && (
+            <View style={seg.badge}><Text style={seg.badgeText}>{unreadActivity}</Text></View>
           )}
         </TouchableOpacity>
       </View>
@@ -170,44 +188,32 @@ const glc = StyleSheet.create({
   },
 });
 
+// ─── Time formatting helper ─────────────────────────────────────────────────
+function formatRelativeTime(dateString: string): string {
+  const now = new Date();
+  const date = new Date(dateString);
+  const diffMs = now.getTime() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHrs = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMin < 1) return 'now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHrs < 24) return `${diffHrs}h ago`;
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString();
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // MESSAGES TAB
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// ─── Message request data ───────────────────────────────────────────────────
-const MESSAGE_REQUESTS = [
-  { handle: 'NightOwl21', preview: 'Hey! Are you in Prof Kim\'s tutorial section?', time: '1h ago' },
-  { handle: 'QuantumLeap', preview: 'Saw your post about the hackathon \u2014 interested in teaming up?', time: '3h ago' },
-  { handle: 'CafeLatte99', preview: 'Hi, I\'m looking for a study group for STA247', time: '1d ago' },
-];
-
-// ─── Conversation data ─────────────────────────────────────────────────────
-const CONVERSATIONS = [
-  {
-    id: '1', handle: 'StudyGuru', preview: 'For sure! Robarts 3rd floor works great', time: '2m ago',
-    unread: 2, contextBadge: 'CSC263', contextColor: T.accentBlue, pinned: true,
-  },
-  {
-    id: '2', handle: 'PixelFern42', preview: 'Hey, are you still selling the calculus textbook?', time: '32m ago',
-    unread: 1, contextBadge: 'Marketplace', contextColor: T.accentOrange, pinned: false,
-  },
-  {
-    id: '3', handle: 'CosmicNova88', preview: 'The study session yesterday was really helpful, thanks!', time: '1h ago',
-    unread: 0, contextBadge: 'Study Session', contextColor: T.accentPurple, pinned: false,
-  },
-  {
-    id: '4', handle: 'SilverMaple33', preview: 'I\'ll check the syllabus and get back to you', time: '3h ago',
-    unread: 0, contextBadge: null, contextColor: null, pinned: false,
-  },
-  {
-    id: '5', handle: 'VelvetStorm', preview: 'That prof review link was so helpful, thanks!', time: '1d ago',
-    unread: 0, contextBadge: 'Career & Co-op', contextColor: T.accentGreen, pinned: false,
-  },
-];
-
 // ─── Message requests section ───────────────────────────────────────────────
-function MessageRequestsSection({ router }: { router: any }) {
+function MessageRequestsSection({ requests, router }: { requests: Conversation[]; router: any }) {
   const [expanded, setExpanded] = useState(false);
+
+  if (requests.length === 0) return null;
 
   const toggle = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -223,7 +229,7 @@ function MessageRequestsSection({ router }: { router: any }) {
           </View>
           <Text style={mr.headerTitle}>Message Requests</Text>
           <View style={mr.countBadge}>
-            <Text style={mr.countText}>{MESSAGE_REQUESTS.length}</Text>
+            <Text style={mr.countText}>{requests.length}</Text>
           </View>
         </View>
         <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={T.textMuted} />
@@ -231,36 +237,39 @@ function MessageRequestsSection({ router }: { router: any }) {
 
       {expanded && (
         <View style={mr.list}>
-          {MESSAGE_REQUESTS.map((req) => (
-            <View key={req.handle} style={mr.reqRow}>
-              <TouchableOpacity activeOpacity={0.7} onPress={() => router.push(`/profile/${req.handle}` as any)}>
-                <GradAvatar handle={req.handle} size={38} />
-              </TouchableOpacity>
-              <View style={{ flex: 1, gap: 2 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Text style={mr.reqHandle}>@{req.handle}</Text>
-                  <Text style={mr.reqTime}>{req.time}</Text>
+          {requests.map((req) => {
+            const handle = req.conversationId.slice(0, 8);
+            return (
+              <View key={req.id} style={mr.reqRow}>
+                <TouchableOpacity activeOpacity={0.7} onPress={() => router.push(`/profile/${handle}` as any)}>
+                  <GradAvatar handle={handle} size={38} />
+                </TouchableOpacity>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Text style={mr.reqHandle}>@{handle}</Text>
+                    <Text style={mr.reqTime}>{formatRelativeTime(req.conversation.lastMessageAt)}</Text>
+                  </View>
+                  <Text style={mr.reqPreview} numberOfLines={1}>{req.conversation.lastMessagePreview}</Text>
                 </View>
-                <Text style={mr.reqPreview} numberOfLines={1}>{req.preview}</Text>
+                <View style={mr.reqActions}>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => Alert.alert('Accepted', `Chat with @${handle} started`)}
+                    style={mr.acceptBtn}
+                  >
+                    <Ionicons name="checkmark" size={14} color={T.white} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => Alert.alert('Ignored', `Request from @${handle} ignored`)}
+                    style={mr.ignoreBtn}
+                  >
+                    <Ionicons name="close" size={14} color={T.textMuted} />
+                  </TouchableOpacity>
+                </View>
               </View>
-              <View style={mr.reqActions}>
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={() => Alert.alert('Accepted', `Chat with @${req.handle} started`)}
-                  style={mr.acceptBtn}
-                >
-                  <Ionicons name="checkmark" size={14} color={T.white} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={() => Alert.alert('Ignored', `Request from @${req.handle} ignored`)}
-                  style={mr.ignoreBtn}
-                >
-                  <Ionicons name="close" size={14} color={T.textMuted} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
       )}
     </GlassCard>
@@ -299,43 +308,36 @@ const mr = StyleSheet.create({
 });
 
 // ─── Conversation row ───────────────────────────────────────────────────────
-function ConversationRow({ conv, router }: { conv: typeof CONVERSATIONS[0]; router: any }) {
+function ConversationRow({ conv, router }: { conv: Conversation; router: any }) {
+  const handle = conv.conversationId.slice(0, 8);
+  const unread = conv.unreadCount;
+
   return (
     <TouchableOpacity
       activeOpacity={0.82}
-      onPress={() => router.push(`/dm/${conv.id}` as any)}
+      onPress={() => router.push(`/dm/${conv.conversationId}` as any)}
       style={cv.row}
     >
       <View>
-        <GradAvatar handle={conv.handle} size={46} />
-        {conv.unread > 0 && (
+        <GradAvatar handle={handle} size={46} />
+        {unread > 0 && (
           <View style={cv.unreadDot} />
         )}
       </View>
       <View style={{ flex: 1, gap: 3 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text style={[cv.name, conv.unread > 0 && { color: T.textPrimary }]}>@{conv.handle}</Text>
-          <Text style={[cv.time, conv.unread > 0 && { color: T.accentPurple, fontWeight: '700' }]}>{conv.time}</Text>
+          <Text style={[cv.name, unread > 0 && { color: T.textPrimary }]}>@{handle}</Text>
+          <Text style={[cv.time, unread > 0 && { color: T.accentPurple, fontWeight: '700' }]}>
+            {formatRelativeTime(conv.conversation.lastMessageAt)}
+          </Text>
         </View>
-        <Text style={[cv.preview, conv.unread > 0 && { color: T.textPrimary, fontWeight: '600' }]} numberOfLines={1}>
-          {conv.preview}
+        <Text style={[cv.preview, unread > 0 && { color: T.textPrimary, fontWeight: '600' }]} numberOfLines={1}>
+          {conv.conversation.lastMessagePreview}
         </Text>
-        <View style={cv.metaRow}>
-          {conv.contextBadge && (
-            <View style={[cv.contextPill, { backgroundColor: conv.contextColor + '0C', borderColor: conv.contextColor + '20' }]}>
-              <Text style={[cv.contextText, { color: conv.contextColor! }]}>{conv.contextBadge}</Text>
-            </View>
-          )}
-          {conv.pinned && (
-            <View style={cv.pinnedBadge}>
-              <Ionicons name="pin" size={9} color={T.accentOrange} />
-            </View>
-          )}
-        </View>
       </View>
-      {conv.unread > 0 && (
+      {unread > 0 && (
         <View style={cv.unreadBadge}>
-          <Text style={cv.unreadText}>{conv.unread}</Text>
+          <Text style={cv.unreadText}>{unread}</Text>
         </View>
       )}
     </TouchableOpacity>
@@ -376,22 +378,47 @@ const cv = StyleSheet.create({
 
 // ─── Messages tab content ───────────────────────────────────────────────────
 function MessagesTab({ router }: { router: any }) {
-  const pinned = CONVERSATIONS.filter((c) => c.pinned);
-  const rest = CONVERSATIONS.filter((c) => !c.pinned);
+  const { data, isLoading } = useConversations();
+  const conversations = data?.items ?? [];
+
+  // Split into requests (pending) vs active conversations
+  const requests = useMemo(
+    () => conversations.filter((c) => c.status === 'pending'),
+    [conversations],
+  );
+  const active = useMemo(
+    () => conversations.filter((c) => c.status !== 'pending'),
+    [conversations],
+  );
+
+  if (isLoading) {
+    return (
+      <View style={{ paddingHorizontal: 22, paddingTop: 8 }}>
+        <SkeletonList count={5} type="row" />
+      </View>
+    );
+  }
+
+  if (conversations.length === 0) {
+    return (
+      <GlassCard>
+        <View style={{ alignItems: 'center', gap: 8, paddingVertical: 20 }}>
+          <Ionicons name="chatbubbles-outline" size={32} color={T.textMuted} />
+          <Text style={{ fontSize: 15, fontWeight: '700', color: T.textPrimary }}>No messages yet</Text>
+          <Text style={{ fontSize: 13, color: T.textMuted, textAlign: 'center', lineHeight: 19 }}>
+            Start a conversation with someone on campus!
+          </Text>
+        </View>
+      </GlassCard>
+    );
+  }
 
   return (
     <>
-      <MessageRequestsSection router={router} />
+      <MessageRequestsSection requests={requests} router={router} />
 
-      {pinned.length > 0 && (
-        <>
-          <SectionLabel label="Pinned" />
-          {pinned.map((c) => <ConversationRow key={c.id} conv={c} router={router} />)}
-        </>
-      )}
-
-      <SectionLabel label="Recent" />
-      {rest.map((c) => <ConversationRow key={c.id} conv={c} router={router} />)}
+      <SectionLabel label="Conversations" />
+      {active.map((c) => <ConversationRow key={c.id} conv={c} router={router} />)}
     </>
   );
 }
@@ -401,12 +428,26 @@ function MessagesTab({ router }: { router: any }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ─── Activity summary navigation card ───────────────────────────────────────
-function ActivitySummaryNav({ onSwitchToMessages }: { onSwitchToMessages: () => void }) {
+function ActivitySummaryNav({
+  onSwitchToMessages, notifications,
+}: {
+  onSwitchToMessages: () => void;
+  notifications: Notification[];
+}) {
+  const repliesCount = notifications.filter(
+    (n) => n.type === 'comment_reply' || n.type === 'post_comment',
+  ).length;
+  const mentionsCount = notifications.filter((n) => n.type === 'mention').length;
+  const threadsCount = notifications.filter(
+    (n) => n.type === 'vote_milestone' || n.type === 'thread_trending',
+  ).length;
+  const messagesCount = notifications.filter((n) => n.type === 'new_message').length;
+
   const items = [
-    { icon: 'chatbubble-outline', count: 7, label: 'Replies', color: T.accentBlue },
-    { icon: 'at', count: 2, label: 'Mentions', color: T.accentPurple },
-    { icon: 'trending-up-outline', count: 3, label: 'Threads', color: T.accentGreen },
-    { icon: 'mail-outline', count: 3, label: 'Messages', color: T.accentPink, onPress: onSwitchToMessages },
+    { icon: 'chatbubble-outline', count: repliesCount, label: 'Replies', color: T.accentBlue },
+    { icon: 'at', count: mentionsCount, label: 'Mentions', color: T.accentPurple },
+    { icon: 'trending-up-outline', count: threadsCount, label: 'Threads', color: T.accentGreen },
+    { icon: 'mail-outline', count: messagesCount, label: 'Messages', color: T.accentPink, onPress: onSwitchToMessages },
   ];
 
   return (
@@ -815,99 +856,216 @@ function EmptyState({ router }: { router: any }) {
   );
 }
 
+// ─── Notification type → icon mapping ───────────────────────────────────────
+function getNotifIcon(type: string): string {
+  switch (type) {
+    case 'comment_reply': return 'chatbubble-outline';
+    case 'post_comment': return 'chatbubble-outline';
+    case 'mention': return 'at';
+    case 'new_message': return 'mail-outline';
+    case 'vote_milestone': return 'trending-up-outline';
+    case 'thread_trending': return 'flame-outline';
+    case 'poll_result': return 'stats-chart-outline';
+    case 'system': return 'information-circle-outline';
+    default: return 'notifications-outline';
+  }
+}
+
+// ─── Render a single notification card based on its type ────────────────────
+function NotificationCard({ notif, router }: { notif: Notification; router: any }) {
+  const time = formatRelativeTime(notif.createdAt);
+  const p = notif.payload;
+
+  switch (notif.type) {
+    case 'comment_reply':
+    case 'post_comment':
+      return (
+        <GroupedReplyNotif
+          threadTitle={p.postTitle ?? p.threadTitle ?? 'A post'}
+          replyCount={p.replyCount ?? 1}
+          handles={p.handles ?? [p.handle ?? 'User']}
+          latestPreview={p.message ?? p.preview ?? ''}
+          time={time}
+          unread={!notif.isRead}
+          onPress={() => router.push(p.postId ? `/post/${p.postId}` : '/feed')}
+        />
+      );
+
+    case 'mention':
+      return (
+        <GroupedMentionNotif
+          board={p.board ?? p.communityName ?? 'Community'}
+          mentionCount={p.mentionCount ?? 1}
+          preview={p.message ?? p.preview ?? ''}
+          time={time}
+          unread={!notif.isRead}
+          onPress={() => router.push(p.postId ? `/post/${p.postId}` : '/feed')}
+        />
+      );
+
+    case 'vote_milestone':
+    case 'thread_trending':
+      return (
+        <ThreadMomentumCard
+          threadTitle={p.postTitle ?? p.threadTitle ?? 'A thread'}
+          newReplies={p.newReplies ?? p.replyCount ?? 0}
+          viewIncrease={p.viewIncrease ?? p.views ?? 0}
+          time={time}
+          onPress={() => router.push(p.postId ? `/post/${p.postId}` : '/feed')}
+        />
+      );
+
+    case 'poll_result':
+      return (
+        <PollResultNotif
+          question={p.question ?? 'Poll'}
+          winner={p.winner ?? ''}
+          percent={p.percent ?? 0}
+          time={time}
+          onPress={() => router.push(p.pollId ? `/polls` : '/polls')}
+        />
+      );
+
+    case 'system':
+      return (
+        <GlassCard style={{ padding: 0 }}>
+          <View style={{ paddingTop: 4, paddingBottom: 4 }}>
+            <SystemNotif
+              icon={p.icon ?? 'information-circle-outline'}
+              title={p.title ?? 'System'}
+              body={p.message ?? p.body ?? ''}
+              time={time}
+              onPress={p.route ? () => router.push(p.route) : undefined}
+            />
+          </View>
+        </GlassCard>
+      );
+
+    default:
+      // Generic notification fallback
+      return (
+        <GlassCard style={{ padding: 0 }}>
+          <View style={{ paddingTop: 4, paddingBottom: 4 }}>
+            <SystemNotif
+              icon={getNotifIcon(notif.type)}
+              title={p.title ?? notif.type.replace(/_/g, ' ')}
+              body={p.message ?? p.preview ?? ''}
+              time={time}
+              onPress={p.postId ? () => router.push(`/post/${p.postId}`) : undefined}
+            />
+          </View>
+        </GlassCard>
+      );
+  }
+}
+
 // ─── Activity tab content ───────────────────────────────────────────────────
 function ActivityTab({ router, onSwitchToMessages }: { router: any; onSwitchToMessages: () => void }) {
+  const { data, isLoading } = useNotifications();
+  const notifications = data?.items ?? [];
+
+  if (isLoading) {
+    return (
+      <View style={{ paddingHorizontal: 22, paddingTop: 8 }}>
+        <SkeletonList count={4} type="card" />
+      </View>
+    );
+  }
+
+  if (notifications.length === 0) {
+    return (
+      <>
+        <ActivitySummaryNav onSwitchToMessages={onSwitchToMessages} notifications={[]} />
+        <EmptyState router={router} />
+      </>
+    );
+  }
+
+  // Split notifications into time groups
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const yesterdayStart = todayStart - 86400000;
+
+  const unreadNew = notifications.filter((n) => !n.isRead);
+  const readToday = notifications.filter((n) => {
+    const ts = new Date(n.createdAt).getTime();
+    return n.isRead && ts >= todayStart;
+  });
+  const yesterday = notifications.filter((n) => {
+    const ts = new Date(n.createdAt).getTime();
+    return ts >= yesterdayStart && ts < todayStart;
+  });
+  const older = notifications.filter((n) => {
+    const ts = new Date(n.createdAt).getTime();
+    return n.isRead && ts < yesterdayStart;
+  });
+
+  // Separate system notifications
+  const systemNotifs = notifications.filter((n) => n.type === 'system');
+  const nonSystemNew = unreadNew.filter((n) => n.type !== 'system');
+  const nonSystemToday = readToday.filter((n) => n.type !== 'system');
+  const nonSystemYesterday = yesterday.filter((n) => n.type !== 'system');
+  const nonSystemOlder = older.filter((n) => n.type !== 'system');
+
   return (
     <>
-      <ActivitySummaryNav onSwitchToMessages={onSwitchToMessages} />
+      <ActivitySummaryNav onSwitchToMessages={onSwitchToMessages} notifications={notifications} />
 
-      {/* ── New ── */}
-      <SectionLabel label="New" />
+      {nonSystemNew.length > 0 && (
+        <>
+          <SectionLabel label="New" />
+          {nonSystemNew.map((n) => (
+            <NotificationCard key={n.id} notif={n} router={router} />
+          ))}
+        </>
+      )}
 
-      <GroupedReplyNotif
-        threadTitle="Anyone have experience with the registrar appeals process?"
-        replyCount={3}
-        handles={['CosmicNova88', 'SilverMaple33', 'VelvetStorm']}
-        latestPreview='"Did you CC the department? They tend to respond way faster..."'
-        time="5m ago"
-        unread
-        onPress={() => router.push('/post/1')}
-      />
+      {nonSystemToday.length > 0 && (
+        <>
+          <SectionLabel label="Earlier Today" />
+          {nonSystemToday.map((n) => (
+            <NotificationCard key={n.id} notif={n} router={router} />
+          ))}
+        </>
+      )}
 
-      <GroupedMentionNotif
-        board="Housing"
-        mentionCount={2}
-        preview="@AnonBio12 actually brought this up last week \u2014 check their post in Housing"
-        time="18m ago"
-        unread
-        onPress={() => router.push('/post/1')}
-      />
+      {nonSystemYesterday.length > 0 && (
+        <>
+          <SectionLabel label="Yesterday" />
+          {nonSystemYesterday.map((n) => (
+            <NotificationCard key={n.id} notif={n} router={router} />
+          ))}
+        </>
+      )}
 
-      {/* ── Earlier Today ── */}
-      <SectionLabel label="Earlier Today" />
+      {nonSystemOlder.length > 0 && (
+        <>
+          <SectionLabel label="Older" />
+          {nonSystemOlder.map((n) => (
+            <NotificationCard key={n.id} notif={n} router={router} />
+          ))}
+        </>
+      )}
 
-      <ThreadMomentumCard
-        threadTitle="Anyone else think the MAT237 midterm grading curve was way off?"
-        newReplies={12}
-        viewIncrease={340}
-        time="2h ago"
-        onPress={() => router.push('/post/1')}
-      />
-
-      <GroupedReplyNotif
-        threadTitle="Best study spots on campus after 8 PM?"
-        replyCount={5}
-        handles={['StudyGuru', 'NightOwl21', 'QuantumLeap']}
-        latestPreview='"Robarts 3rd floor is unbeatable after 8 PM, trust me"'
-        time="3h ago"
-        onPress={() => router.push('/post/1')}
-      />
-
-      <PollResultNotif
-        question="Should the library extend hours during finals?"
-        winner="Yes, until 2 AM"
-        percent={73}
-        time="4h ago"
-        onPress={() => router.push('/polls')}
-      />
-
-      {/* ── Yesterday ── */}
-      <SectionLabel label="Yesterday" />
-
-      <ThreadMomentumCard
-        threadTitle="Free coffee at Robarts until noon \u2014 Hart House study week pop-up"
-        newReplies={8}
-        viewIncrease={520}
-        time="Yesterday"
-        onPress={() => router.push('/post/1')}
-      />
-
-      {/* ── System ── */}
-      <SectionLabel label="System" />
-
-      <GlassCard style={{ padding: 0 }}>
-        <View style={{ paddingTop: 4, paddingBottom: 4 }}>
-          <SystemNotif
-            icon="shield-checkmark-outline"
-            title="Post approved"
-            body="Your post in Classes was reviewed and approved."
-            time="4h ago"
-          />
-          <SystemNotif
-            icon="megaphone-outline"
-            title="New feature"
-            body="Study Buddy matching is now available \u2014 try it out!"
-            time="1d ago"
-            onPress={() => router.push('/study-buddy')}
-          />
-          <SystemNotif
-            icon="information-circle-outline"
-            title="Privacy update"
-            body="We\u2019ve updated our privacy policy. Tap to review."
-            time="3d ago"
-          />
-        </View>
-      </GlassCard>
+      {systemNotifs.length > 0 && (
+        <>
+          <SectionLabel label="System" />
+          <GlassCard style={{ padding: 0 }}>
+            <View style={{ paddingTop: 4, paddingBottom: 4 }}>
+              {systemNotifs.map((n) => (
+                <SystemNotif
+                  key={n.id}
+                  icon={n.payload.icon ?? 'information-circle-outline'}
+                  title={n.payload.title ?? 'System'}
+                  body={n.payload.message ?? n.payload.body ?? ''}
+                  time={formatRelativeTime(n.createdAt)}
+                  onPress={n.payload.route ? () => router.push(n.payload.route) : undefined}
+                />
+              ))}
+            </View>
+          </GlassCard>
+        </>
+      )}
 
       <View style={{ height: 40 }} />
     </>
@@ -919,13 +1077,39 @@ function ActivityTab({ router, onSwitchToMessages }: { router: any; onSwitchToMe
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function InboxScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'messages' | 'activity'>('messages');
   const [refreshing, setRefreshing] = useState(false);
-  const [allRead, setAllRead] = useState(false);
-  const onRefresh = useCallback(() => {
+
+  // Badge counts
+  const { data: conversationsData } = useConversations();
+  const { data: unreadCount } = useUnreadNotificationCount();
+  const markAllRead = useMarkAllNotificationsRead();
+
+  const unreadMessages = useMemo(() => {
+    const items = conversationsData?.items ?? [];
+    return items.reduce((sum, c) => sum + c.unreadCount, 0);
+  }, [conversationsData]);
+
+  const unreadActivity = typeof unreadCount === 'number' ? unreadCount : 0;
+
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1200);
-  }, []);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['conversations'] }),
+      queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+      queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count'] }),
+    ]);
+    setRefreshing(false);
+  }, [queryClient]);
+
+  const handleMarkAllRead = useCallback(() => {
+    markAllRead.mutate(undefined, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count'] });
+      },
+    });
+  }, [markAllRead, queryClient]);
 
   return (
     <View style={s.root}>
@@ -939,16 +1123,25 @@ export default function InboxScreen() {
           <TouchableOpacity
             activeOpacity={0.8}
             style={s.navActionWrap}
-            onPress={() => setAllRead(true)}
+            onPress={handleMarkAllRead}
           >
             <View style={s.navActionBtn}>
-              <Ionicons name="checkmark-done-outline" size={17} color={T.textSecondary} />
+              {markAllRead.isPending ? (
+                <ActivityIndicator size="small" color={T.textSecondary} />
+              ) : (
+                <Ionicons name="checkmark-done-outline" size={17} color={T.textSecondary} />
+              )}
             </View>
           </TouchableOpacity>
         </View>
 
         {/* Segmented Control */}
-        <SegmentedControl active={activeTab} onChange={setActiveTab} />
+        <SegmentedControl
+          active={activeTab}
+          onChange={setActiveTab}
+          unreadMessages={unreadMessages}
+          unreadActivity={unreadActivity}
+        />
 
         {/* Content */}
         <ScrollView

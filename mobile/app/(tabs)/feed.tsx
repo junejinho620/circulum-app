@@ -1,13 +1,20 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Animated, Dimensions,
-  RefreshControl,
+  RefreshControl, ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import EmptyState from '../../src/components/common/EmptyState';
+import { FeedCardSkeleton } from '../../src/components/common/Skeletons';
+import { useCampusFeed, Post } from '../../src/services/queries';
+import { useAuthStore } from '../../src/store/auth.store';
+import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
+
+dayjs.extend(relativeTime);
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -42,13 +49,27 @@ function avatarGrad(handle: string): [string, string] {
 // ─── Filter chips ─────────────────────────────────────────────────────────────
 const FILTERS = ['For You', 'Following', 'Trending', 'Classes', 'Events', 'Confessions'];
 
+// ─── Category → board mapping ─────────────────────────────────────────────────
+const CATEGORY_BOARD: Record<string, { label: string; color: string }> = {
+  general:    { label: 'General',      color: '#4B50F8' },
+  study:      { label: 'Classes',      color: '#4B50F8' },
+  meme:       { label: 'Memes',        color: '#E655C5' },
+  event:      { label: 'Events',       color: '#8B4DFF' },
+  buy_sell:   { label: 'Marketplace',  color: '#F1973B' },
+  lost_found: { label: 'Lost & Found', color: '#6B7CFF' },
+};
+
+function boardForCategory(category: string) {
+  return CATEGORY_BOARD[category] ?? { label: category, color: '#4B50F8' };
+}
+
 // ─── Anonymous tap quips ─────────────────────────────────────────────────────
 const ANON_QUIPS = [
-  'Nice try! Identity sealed 🔒',
-  'Behind the mask… another mask 🎭',
-  'Anonymous and proud ✊',
-  'Some mysteries stay unsolved 🌑',
-  'The shadows keep my secrets 👤',
+  'Nice try! Identity sealed \u{1F512}',
+  'Behind the mask\u2026 another mask \u{1F3AD}',
+  'Anonymous and proud \u270A',
+  'Some mysteries stay unsolved \u{1F311}',
+  'The shadows keep my secrets \u{1F464}',
   'You\'ll never know \u{1F60F}',
 ];
 
@@ -98,125 +119,16 @@ const at = StyleSheet.create({
   text: { fontSize: 14, fontWeight: '600', color: T.textPrimary },
 });
 
-// ─── Mock feed data ───────────────────────────────────────────────────────────
-type FeedItem = {
-  id: string;
-  type: 'post' | 'poll' | 'event' | 'milestone';
-  author: string;
-  handle: string;
-  isAnonymous: boolean;
-  board: string;
-  boardColor: string;
-  community?: string;
-  text: string;
-  time: string;
-  upvotes: number;
-  comments: number;
-  // poll-specific
-  pollOptions?: { label: string; votes: number }[];
-  // event-specific
-  eventDate?: string;
-  eventLocation?: string;
-  eventAttendees?: number;
-  // milestone
-  milestoneIcon?: string;
-  milestoneColor?: string;
-};
-
-const FEED_DATA: FeedItem[] = [
-  {
-    id: '1', type: 'post', author: 'Anonymous', handle: 'anon', isAnonymous: true,
-    board: 'Confessions', boardColor: '#E655C5',
-    text: 'I accidentally submitted the wrong file for my final project and the prof gave me a 92 anyway. I still haven\'t told anyone.',
-    time: '8m', upvotes: 217, comments: 43,
-  },
-  {
-    id: '2', type: 'poll', author: 'Sarah K.', handle: 'sarahk', isAnonymous: false,
-    board: 'Classes', boardColor: '#4B50F8', community: 'MAT237',
-    text: 'How did everyone feel about the midterm?',
-    time: '15m', upvotes: 89, comments: 34,
-    pollOptions: [
-      { label: 'Easy — I\'m fine', votes: 12 },
-      { label: 'Fair but tricky', votes: 48 },
-      { label: 'Absolutely brutal', votes: 67 },
-      { label: 'I blacked out', votes: 31 },
-    ],
-  },
-  {
-    id: '3', type: 'event', author: 'Hart House', handle: 'harthouse', isAnonymous: false,
-    board: 'Events', boardColor: '#8B4DFF',
-    text: 'Study Week Pop-Up: Free Coffee & Donuts',
-    time: '22m', upvotes: 134, comments: 18,
-    eventDate: 'Today, 11:00 AM – 2:00 PM',
-    eventLocation: 'Hart House Great Hall',
-    eventAttendees: 86,
-  },
-  {
-    id: '4', type: 'post', author: 'Mike T.', handle: 'miket', isAnonymous: false,
-    board: 'Housing', boardColor: '#6B7CFF',
-    text: 'Subletting my 1BR near campus this summer. Fully furnished, $1200/mo, 5 min walk to Robarts. DM if interested.',
-    time: '38m', upvotes: 24, comments: 11,
-  },
-  {
-    id: '5', type: 'milestone', author: '', handle: '', isAnonymous: false,
-    board: 'Campus', boardColor: '#3DAB73',
-    text: 'CSC263 community just hit 500 members!',
-    time: '1h', upvotes: 45, comments: 8,
-    milestoneIcon: 'trophy-outline', milestoneColor: '#F1973B',
-  },
-  {
-    id: '6', type: 'post', author: 'Anonymous', handle: 'anon2', isAnonymous: true,
-    board: 'Confessions', boardColor: '#E655C5',
-    text: 'The person who sits behind me in PSY100 always smells like fresh cookies and it\'s genuinely the highlight of my Mondays.',
-    time: '1h', upvotes: 312, comments: 67,
-  },
-  {
-    id: '7', type: 'post', author: 'Chris L.', handle: 'chrisl', isAnonymous: false,
-    board: 'Classes', boardColor: '#4B50F8', community: 'CSC108',
-    text: 'Pro tip: Professor Diane\'s office hours are WAY less crowded on Thursdays. Got my entire assignment reviewed in 10 mins.',
-    time: '2h', upvotes: 78, comments: 15,
-  },
-  {
-    id: '8', type: 'poll', author: 'Campus Life', handle: 'campuslife', isAnonymous: false,
-    board: 'Social', boardColor: '#3DAB73',
-    text: 'Best study spot on campus?',
-    time: '2h', upvotes: 156, comments: 42,
-    pollOptions: [
-      { label: 'Robarts Library', votes: 89 },
-      { label: 'Gerstein', votes: 45 },
-      { label: 'Bahen Centre', votes: 34 },
-      { label: 'A random bench outside', votes: 62 },
-    ],
-  },
-  {
-    id: '9', type: 'event', author: 'CS Student Union', handle: 'cssu', isAnonymous: false,
-    board: 'Events', boardColor: '#8B4DFF',
-    text: 'Hackathon Info Session — Build your team!',
-    time: '3h', upvotes: 67, comments: 23,
-    eventDate: 'Tomorrow, 6:00 PM',
-    eventLocation: 'Bahen Centre BA1190',
-    eventAttendees: 42,
-  },
-  {
-    id: '10', type: 'post', author: 'Jessica W.', handle: 'jessicaw', isAnonymous: false,
-    board: 'Marketplace', boardColor: '#F1973B',
-    text: 'Selling Stewart Calculus 9th Ed — $40. Barely used (I wish I could say the same about the knowledge). Pick up at Robarts.',
-    time: '3h', upvotes: 33, comments: 7,
-  },
-];
-
 // ─── Presence strip ──────────────────────────────────────────────────────────
-const ACTIVE_USERS = [
-  'Sarah K.', 'Mike T.', 'Chris L.', 'Anonymous', 'Jessica W.',
-  'Alex R.', 'Jordan P.', 'Anonymous', 'Sam H.', 'Taylor N.',
-  'Anonymous', 'Casey M.',
+const PRESENCE_NAMES = [
+  'Sarah K.', 'Mike T.', 'Chris L.', 'Anonymous', 'Jessica W.', 'Alex R.',
 ];
 
 function PresenceStrip() {
   return (
     <View style={ps.wrap}>
       <View style={ps.avatarStack}>
-        {ACTIVE_USERS.slice(0, 6).map((name, i) => (
+        {PRESENCE_NAMES.slice(0, 6).map((name, i) => (
           <View key={i} style={[ps.avatarRing, { marginLeft: i === 0 ? 0 : -10, zIndex: 6 - i }]}>
             <LinearGradient
               colors={avatarGrad(name)}
@@ -413,8 +325,12 @@ const fc = StyleSheet.create({
 
 // ─── Feed card components ─────────────────────────────────────────────────────
 
-function PostCard({ item, onPress, onAvatarPress }: { item: FeedItem; onPress: () => void; onAvatarPress: () => void }) {
-  const ag = avatarGrad(item.handle);
+function PostCard({ item, onPress, onAvatarPress }: { item: Post; onPress: () => void; onAvatarPress: () => void }) {
+  const board = boardForCategory(item.category);
+  const ag = avatarGrad(item.author.handle);
+  const score = item.upvotes - item.downvotes;
+  const timeAgo = dayjs(item.createdAt).fromNow(true);
+
   return (
     <View style={fd.shadow}>
       <TouchableOpacity onPress={onPress} activeOpacity={0.88}>
@@ -423,189 +339,68 @@ function PostCard({ item, onPress, onAvatarPress }: { item: FeedItem; onPress: (
           <View style={fd.authorRow}>
             <TouchableOpacity onPress={onAvatarPress} activeOpacity={0.7}>
               <LinearGradient colors={ag} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={fd.avatar}>
-                {item.isAnonymous ? (
-                  <Ionicons name="eye-off" size={14} color="rgba(255,255,255,0.9)" />
-                ) : (
-                  <Text style={fd.avatarLetter}>{item.author[0]}</Text>
-                )}
+                <Text style={fd.avatarLetter}>{item.author.handle[0]?.toUpperCase()}</Text>
               </LinearGradient>
             </TouchableOpacity>
             <View style={{ flex: 1 }}>
-              <Text style={fd.authorName}>{item.author}</Text>
+              <Text style={fd.authorName}>@{item.author.handle}</Text>
               <View style={fd.authorMeta}>
-                <View style={[fd.boardPill, { backgroundColor: item.boardColor + '10', borderColor: item.boardColor + '20' }]}>
-                  <Text style={[fd.boardPillText, { color: item.boardColor }]}>{item.board}</Text>
+                <View style={[fd.boardPill, { backgroundColor: board.color + '10', borderColor: board.color + '20' }]}>
+                  <Text style={[fd.boardPillText, { color: board.color }]}>{board.label}</Text>
                 </View>
                 {item.community && (
-                  <Text style={fd.communityText}>in {item.community}</Text>
+                  <Text style={fd.communityText}>in {item.community.name}</Text>
                 )}
               </View>
             </View>
-            <Text style={fd.time}>{item.time}</Text>
+            <Text style={fd.time}>{timeAgo}</Text>
           </View>
+
+          {/* Title */}
+          {!!item.title && (
+            <Text style={[fd.body, { fontWeight: '700' }]}>{item.title}</Text>
+          )}
 
           {/* Body */}
-          <Text style={fd.body}>{item.text}</Text>
+          {!!item.body && (
+            <Text style={fd.body} numberOfLines={4}>{item.body}</Text>
+          )}
 
           {/* Actions */}
           <View style={fd.actionsRow}>
             <TouchableOpacity style={fd.actionBtn} activeOpacity={0.7}>
-              <Ionicons name="arrow-up-outline" size={16} color={T.accentBlue} />
-              <Text style={[fd.actionText, { color: T.accentBlue }]}>{item.upvotes}</Text>
+              <Ionicons
+                name={item.userVote === 1 ? 'arrow-up' : 'arrow-up-outline'}
+                size={16}
+                color={item.userVote === 1 ? T.accentBlue : T.accentBlue}
+              />
+              <Text style={[fd.actionText, { color: T.accentBlue }]}>{score}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={fd.actionBtn} activeOpacity={0.7}>
+              <Ionicons
+                name={item.userVote === -1 ? 'arrow-down' : 'arrow-down-outline'}
+                size={16}
+                color={item.userVote === -1 ? '#E6556F' : T.textMuted}
+              />
             </TouchableOpacity>
             <TouchableOpacity style={fd.actionBtn} activeOpacity={0.7}>
               <Ionicons name="chatbubble-outline" size={14} color={T.textMuted} />
-              <Text style={fd.actionText}>{item.comments}</Text>
+              <Text style={fd.actionText}>{item.commentCount}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={fd.actionBtn} activeOpacity={0.7}>
               <Ionicons name="share-outline" size={15} color={T.textMuted} />
             </TouchableOpacity>
             <View style={{ flex: 1 }} />
             <TouchableOpacity style={fd.actionBtn} activeOpacity={0.7}>
-              <Ionicons name="bookmark-outline" size={15} color={T.textMuted} />
+              <Ionicons
+                name={item.isBookmarked ? 'bookmark' : 'bookmark-outline'}
+                size={15}
+                color={item.isBookmarked ? T.accentPurple : T.textMuted}
+              />
             </TouchableOpacity>
           </View>
         </View>
       </TouchableOpacity>
-    </View>
-  );
-}
-
-function PollCard({ item, onPress, onAvatarPress }: { item: FeedItem; onPress: () => void; onAvatarPress: () => void }) {
-  const ag = avatarGrad(item.handle);
-  const totalVotes = item.pollOptions?.reduce((sum, o) => sum + o.votes, 0) ?? 1;
-
-  return (
-    <View style={fd.shadow}>
-      <TouchableOpacity onPress={onPress} activeOpacity={0.88}>
-        <View style={fd.card}>
-          {/* Author row */}
-          <View style={fd.authorRow}>
-            <TouchableOpacity onPress={onAvatarPress} activeOpacity={0.7}>
-              <LinearGradient colors={ag} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={fd.avatar}>
-                <Text style={fd.avatarLetter}>{item.author[0]}</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-            <View style={{ flex: 1 }}>
-              <Text style={fd.authorName}>{item.author}</Text>
-              <View style={fd.authorMeta}>
-                <View style={[fd.boardPill, { backgroundColor: item.boardColor + '10', borderColor: item.boardColor + '20' }]}>
-                  <Text style={[fd.boardPillText, { color: item.boardColor }]}>{item.board}</Text>
-                </View>
-                {item.community && <Text style={fd.communityText}>in {item.community}</Text>}
-                <View style={pl.pollBadge}>
-                  <Ionicons name="stats-chart-outline" size={10} color={T.accentPurple} />
-                  <Text style={pl.pollBadgeText}>Poll</Text>
-                </View>
-              </View>
-            </View>
-            <Text style={fd.time}>{item.time}</Text>
-          </View>
-
-          <Text style={fd.body}>{item.text}</Text>
-
-          {/* Poll options */}
-          <View style={pl.options}>
-            {item.pollOptions?.map((opt, i) => {
-              const pct = Math.round((opt.votes / totalVotes) * 100);
-              const isTop = opt.votes === Math.max(...(item.pollOptions?.map(o => o.votes) ?? [0]));
-              return (
-                <View key={i} style={pl.optionWrap}>
-                  <View style={[pl.optionBar, { width: `${pct}%`, backgroundColor: isTop ? T.accentBlue + '14' : 'rgba(17,17,17,0.04)' }]} />
-                  <Text style={[pl.optionLabel, isTop && { color: T.accentBlue, fontWeight: '700' }]}>{opt.label}</Text>
-                  <Text style={[pl.optionPct, isTop && { color: T.accentBlue }]}>{pct}%</Text>
-                </View>
-              );
-            })}
-          </View>
-          <Text style={pl.totalVotes}>{totalVotes} votes</Text>
-
-          {/* Actions */}
-          <View style={fd.actionsRow}>
-            <TouchableOpacity style={fd.actionBtn} activeOpacity={0.7}>
-              <Ionicons name="arrow-up-outline" size={16} color={T.accentBlue} />
-              <Text style={[fd.actionText, { color: T.accentBlue }]}>{item.upvotes}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={fd.actionBtn} activeOpacity={0.7}>
-              <Ionicons name="chatbubble-outline" size={14} color={T.textMuted} />
-              <Text style={fd.actionText}>{item.comments}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={fd.actionBtn} activeOpacity={0.7}>
-              <Ionicons name="share-outline" size={15} color={T.textMuted} />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-function EventCard({ item, onPress }: { item: FeedItem; onPress: () => void }) {
-  return (
-    <View style={fd.shadow}>
-      <TouchableOpacity onPress={onPress} activeOpacity={0.88}>
-        <View style={[fd.card, { borderLeftWidth: 3, borderLeftColor: item.boardColor }]}>
-          {/* Event header */}
-          <View style={fd.authorRow}>
-            <View style={[ev.iconWrap, { backgroundColor: item.boardColor + '14' }]}>
-              <Ionicons name="calendar" size={18} color={item.boardColor} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <View style={fd.authorMeta}>
-                <View style={[fd.boardPill, { backgroundColor: item.boardColor + '10', borderColor: item.boardColor + '20' }]}>
-                  <Text style={[fd.boardPillText, { color: item.boardColor }]}>{item.board}</Text>
-                </View>
-                <Text style={fd.time}>{item.time}</Text>
-              </View>
-            </View>
-          </View>
-
-          <Text style={[fd.body, { fontWeight: '700', fontSize: 15 }]}>{item.text}</Text>
-
-          {/* Event details */}
-          <View style={ev.details}>
-            <View style={ev.detailRow}>
-              <Ionicons name="time-outline" size={14} color={T.accentPurple} />
-              <Text style={ev.detailText}>{item.eventDate}</Text>
-            </View>
-            <View style={ev.detailRow}>
-              <Ionicons name="location-outline" size={14} color={T.accentBlue} />
-              <Text style={ev.detailText}>{item.eventLocation}</Text>
-            </View>
-          </View>
-
-          {/* Attendees + actions */}
-          <View style={fd.actionsRow}>
-            <View style={ev.attendeeWrap}>
-              {[0, 1, 2].map((i) => (
-                <View key={i} style={[ev.miniAvatar, { marginLeft: i === 0 ? 0 : -6, zIndex: 3 - i }]}>
-                  <LinearGradient colors={AVATAR_GRADS[i]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={ev.miniAvatarGrad} />
-                </View>
-              ))}
-              <Text style={ev.attendeeText}>{item.eventAttendees} going</Text>
-            </View>
-            <View style={{ flex: 1 }} />
-            <TouchableOpacity activeOpacity={0.8}>
-              <LinearGradient colors={CTA} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={ev.rsvpBtn}>
-                <Text style={ev.rsvpText}>RSVP</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-function MilestoneCard({ item }: { item: FeedItem }) {
-  return (
-    <View style={ms.wrap}>
-      <View style={ms.line} />
-      <View style={[ms.iconWrap, { backgroundColor: (item.milestoneColor ?? T.accentBlue) + '14' }]}>
-        <Ionicons name={(item.milestoneIcon ?? 'trophy-outline') as any} size={16} color={item.milestoneColor ?? T.accentBlue} />
-      </View>
-      <Text style={ms.text}>{item.text}</Text>
-      <Text style={ms.time}>{item.time}</Text>
     </View>
   );
 }
@@ -644,64 +439,26 @@ const fd = StyleSheet.create({
   actionText: { fontSize: 12, color: T.textMuted, fontWeight: '600' },
 });
 
-const pl = StyleSheet.create({
-  pollBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: 'rgba(139,77,255,0.08)',
-    paddingHorizontal: 7, paddingVertical: 2, borderRadius: 99,
-  },
-  pollBadgeText: { fontSize: 10, fontWeight: '700', color: T.accentPurple },
-  options: { gap: 6 },
-  optionWrap: {
-    flexDirection: 'row', alignItems: 'center',
-    height: 38, borderRadius: 10,
-    backgroundColor: 'rgba(17,17,17,0.02)',
-    borderWidth: 1, borderColor: 'rgba(17,17,17,0.04)',
-    overflow: 'hidden', paddingHorizontal: 12,
-  },
-  optionBar: {
-    position: 'absolute', left: 0, top: 0, bottom: 0,
-    borderRadius: 10,
-  },
-  optionLabel: { flex: 1, fontSize: 12, color: T.textSecondary, fontWeight: '500' },
-  optionPct: { fontSize: 12, color: T.textMuted, fontWeight: '700' },
-  totalVotes: { fontSize: 11, color: T.textMuted },
-});
+// ─── Loading skeleton for feed ───────────────────────────────────────────────
+function FeedLoadingSkeleton() {
+  return (
+    <View style={{ paddingTop: 12, gap: 12, paddingHorizontal: 16 }}>
+      {[0, 1, 2, 3].map((i) => (
+        <FeedCardSkeleton key={i} />
+      ))}
+    </View>
+  );
+}
 
-const ev = StyleSheet.create({
-  iconWrap: {
-    width: 36, height: 36, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  details: { gap: 6 },
-  detailRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  detailText: { fontSize: 12, color: T.textSecondary },
-  attendeeWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  miniAvatar: { borderRadius: 8, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.85)' },
-  miniAvatarGrad: { width: 16, height: 16, borderRadius: 8 },
-  attendeeText: { fontSize: 11, color: T.textMuted, fontWeight: '600' },
-  rsvpBtn: {
-    paddingHorizontal: 16, paddingVertical: 7, borderRadius: 99,
-  },
-  rsvpText: { fontSize: 11, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
-});
-
-const ms = StyleSheet.create({
-  wrap: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    marginHorizontal: 22, paddingVertical: 8,
-  },
-  line: {
-    flex: 0, width: 2, height: 24,
-    backgroundColor: 'rgba(17,17,17,0.06)', borderRadius: 1,
-  },
-  iconWrap: {
-    width: 30, height: 30, borderRadius: 10,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  text: { flex: 1, fontSize: 12, color: T.textSecondary, fontWeight: '600' },
-  time: { fontSize: 11, color: T.textMuted },
-});
+// ─── Footer loading indicator ────────────────────────────────────────────────
+function FooterLoader({ isLoading }: { isLoading: boolean }) {
+  if (!isLoading) return null;
+  return (
+    <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+      <ActivityIndicator size="small" color={T.accentPurple} />
+    </View>
+  );
+}
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 export default function HomeScreen() {
@@ -709,34 +466,57 @@ export default function HomeScreen() {
   const [filter, setFilter] = useState('For You');
   const [anonToast, setAnonToast] = useState<string | null>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
-  const [refreshing, setRefreshing] = useState(false);
 
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1200);
-  }, []);
+  // Determine sort based on active filter
+  const sort = filter === 'Trending' ? 'hot' : 'new';
 
-  const handleAvatarPress = useCallback((item: FeedItem) => {
-    if (item.isAnonymous) {
-      setAnonToast(pickQuip());
-    } else {
-      router.push(`/profile/${item.handle}` as any);
-    }
-  }, []);
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    refetch,
+    isRefetching,
+  } = useCampusFeed(sort);
 
-  const renderItem = useCallback(({ item }: { item: FeedItem }) => {
-    const avatarPress = () => handleAvatarPress(item);
-    switch (item.type) {
-      case 'poll':
-        return <PollCard item={item} onPress={() => router.push(`/post/${item.id}` as any)} onAvatarPress={avatarPress} />;
-      case 'event':
-        return <EventCard item={item} onPress={() => router.push(`/post/${item.id}` as any)} />;
-      case 'milestone':
-        return <MilestoneCard item={item} />;
+  // Flatten paginated data
+  const posts = data?.pages.flatMap(p => p.items) ?? [];
+
+  // Filter posts client-side based on the active filter chip
+  const filteredPosts = React.useMemo(() => {
+    switch (filter) {
+      case 'Classes':
+        return posts.filter(p => p.category === 'study');
+      case 'Events':
+        return posts.filter(p => p.category === 'event');
+      case 'Confessions':
+        return posts.filter(p => p.category === 'meme');
       default:
-        return <PostCard item={item} onPress={() => router.push(`/post/${item.id}` as any)} onAvatarPress={avatarPress} />;
+        return posts;
     }
+  }, [posts, filter]);
+
+  const handleAvatarPress = useCallback((item: Post) => {
+    router.push(`/profile/${item.author.handle}` as any);
   }, []);
+
+  const renderItem = useCallback(({ item }: { item: Post }) => {
+    const avatarPress = () => handleAvatarPress(item);
+    return (
+      <PostCard
+        item={item}
+        onPress={() => router.push(`/post/${item.id}` as any)}
+        onAvatarPress={avatarPress}
+      />
+    );
+  }, []);
+
+  const handleEndReached = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const ListHeader = useCallback(() => (
     <>
@@ -757,37 +537,47 @@ export default function HomeScreen() {
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <Header onBell={() => router.push('/(tabs)/inbox')} />
 
-        <Animated.FlatList
-          data={FEED_DATA}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          ListHeaderComponent={ListHeader}
-          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-          contentContainerStyle={s.scroll}
-          showsVerticalScrollIndicator={false}
-          onScroll={Animated.event(
-            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-            { useNativeDriver: true },
-          )}
-          scrollEventThrottle={16}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor="#8B4DFF"
-              colors={['#8B4DFF']}
-            />
-          }
-          ListEmptyComponent={
-            <EmptyState
-              icon="newspaper-outline"
-              title="Your feed is quiet"
-              message="Join communities and follow topics to see posts here."
-              actionLabel="Explore Communities"
-              onAction={() => router.push('/(tabs)/communities')}
-            />
-          }
-        />
+        {isLoading ? (
+          <>
+            <ListHeader />
+            <FeedLoadingSkeleton />
+          </>
+        ) : (
+          <Animated.FlatList
+            data={filteredPosts}
+            keyExtractor={(item) => item.id}
+            renderItem={renderItem}
+            ListHeaderComponent={ListHeader}
+            ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+            contentContainerStyle={s.scroll}
+            showsVerticalScrollIndicator={false}
+            onScroll={Animated.event(
+              [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+              { useNativeDriver: true },
+            )}
+            scrollEventThrottle={16}
+            onEndReached={handleEndReached}
+            onEndReachedThreshold={0.4}
+            refreshControl={
+              <RefreshControl
+                refreshing={isRefetching && !isLoading}
+                onRefresh={refetch}
+                tintColor="#8B4DFF"
+                colors={['#8B4DFF']}
+              />
+            }
+            ListFooterComponent={<FooterLoader isLoading={isFetchingNextPage} />}
+            ListEmptyComponent={
+              <EmptyState
+                icon="newspaper-outline"
+                title="Your feed is quiet"
+                message="Join communities and follow topics to see posts here."
+                actionLabel="Explore Communities"
+                onAction={() => router.push('/(tabs)/communities')}
+              />
+            }
+          />
+        )}
       </SafeAreaView>
     </View>
   );

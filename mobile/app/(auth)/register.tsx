@@ -1,6 +1,6 @@
 import React, { useState, useRef, forwardRef, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert,
   KeyboardAvoidingView, Platform, TextInput, Animated, Easing,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -396,7 +396,7 @@ const btn = StyleSheet.create({
 export default function RegisterScreen() {
   const router   = useRouter();
   const insets   = useSafeAreaInsets();
-  const { register } = useAuthStore();
+  const { register, login } = useAuthStore();
   const { data: universities } = useUniversities();
 
   const [step, setStep]             = useState<Step>('email');
@@ -449,7 +449,12 @@ export default function RegisterScreen() {
     const e = form.email.trim();
     if (!e) return 'Email is required';
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return 'Enter a valid email address';
-    if (!/\.edu$/i.test(e.split('@')[1] ?? '')) return 'Use your university (.edu) email';
+    // Validate against known university domains if available
+    const domain = e.split('@')[1] ?? '';
+    const knownDomains = universities?.map((u: any) => u.emailDomain) ?? [];
+    if (knownDomains.length > 0 && !knownDomains.includes(domain)) {
+      return 'Use your verified university email';
+    }
     return '';
   };
 
@@ -466,6 +471,12 @@ export default function RegisterScreen() {
     if (emailErr || passErr) {
       setErrors({ email: emailErr, password: passErr });
       return;
+    }
+    // Auto-detect university from email domain
+    const domain = form.email.trim().split('@')[1] ?? '';
+    const matched = universities?.find((u: any) => u.emailDomain === domain);
+    if (matched) {
+      setForm((p) => ({ ...p, universityId: matched.id, universityName: matched.name, universityDomain: matched.emailDomain }));
     }
     setStep('code');
   };
@@ -487,12 +498,27 @@ export default function RegisterScreen() {
     setStep('topics');
   };
 
-  const handleFinish = () => {
+  const handleFinish = async () => {
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      // 1. Register the account
+      await register({
+        email: form.email.trim(),
+        password: form.password,
+        handle: form.handle.trim(),
+        universityId: form.universityId,
+      });
+
+      // 2. Auto-login after registration
+      await login(form.email.trim(), form.password);
+
       router.replace('/(tabs)/feed');
-    }, 800);
+    } catch (err: any) {
+      const msg = err?.message || 'Registration failed';
+      Alert.alert('Registration Failed', msg);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

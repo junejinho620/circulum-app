@@ -1,12 +1,20 @@
 import React, { useState, useRef, forwardRef, useImperativeHandle, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  Modal, Pressable, Dimensions, Animated, PanResponder,
+  Modal, Pressable, Dimensions, Animated, PanResponder, ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import {
+  useStudyBuddyMatches,
+  useStudySessions,
+  useCreateStudySession,
+  useJoinStudySession,
+  StudyBuddyMatch,
+  StudySessionItem,
+} from '../src/services/queries';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -36,138 +44,54 @@ function avatarGrad(i: number): [string, string] {
   return AVATAR_GRADS[i % AVATAR_GRADS.length];
 }
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
-type StudyBuddy = {
-  id: string;
-  name: string;
-  initial: string;
-  courses: string[];
-  sharedCourses: string[];
-  freeSlots: string[];
-  intensity: 'Light' | 'Moderate' | 'Intense';
-  location: string;
-  preference: 'In-person' | 'Online' | 'Both';
-  bio: string;
-  studyStyle: string[];
-  mutualFriends: number;
-  reliability: number;       // 0-100
-  sessionsCompleted: number;
-  compatibility: number;     // 0-100
-  active: boolean;
-};
+// ─── Helpers to map API shapes to UI shapes ──────────────────────────────────
 
-const BUDDIES: StudyBuddy[] = [
-  {
-    id: '1', name: 'Alex K.', initial: 'A',
-    courses: ['CSC263', 'MAT237', 'STA257'],
-    sharedCourses: ['CSC263', 'MAT237'],
-    freeSlots: ['Mon 2-4pm', 'Wed 3-5pm', 'Fri 1-3pm'],
-    intensity: 'Intense', location: 'Robarts Library', preference: 'In-person',
-    bio: 'CS major, love whiteboard problem solving. Looking for consistent study partners for algorithms.',
-    studyStyle: ['Problem solving', 'Whiteboard', 'Discussion'],
-    mutualFriends: 3, reliability: 94, sessionsCompleted: 28, compatibility: 92, active: true,
-  },
-  {
-    id: '2', name: 'Sarah M.', initial: 'S',
-    courses: ['CSC263', 'CSC148', 'PSY100'],
-    sharedCourses: ['CSC263'],
-    freeSlots: ['Tue 10am-12pm', 'Thu 2-4pm'],
-    intensity: 'Moderate', location: 'Gerstein Library', preference: 'Both',
-    bio: 'Double major CS/Psych. Prefer quiet study with occasional discussion breaks.',
-    studyStyle: ['Silent study', 'Discussion', 'Practice problems'],
-    mutualFriends: 1, reliability: 88, sessionsCompleted: 15, compatibility: 85, active: true,
-  },
-  {
-    id: '3', name: 'James T.', initial: 'J',
-    courses: ['MAT237', 'STA257', 'ECO101'],
-    sharedCourses: ['MAT237', 'STA257'],
-    freeSlots: ['Mon 10am-12pm', 'Wed 1-3pm', 'Thu 4-6pm'],
-    intensity: 'Intense', location: 'Bahen Centre', preference: 'In-person',
-    bio: 'Math & stats nerd. Study group organizer — the more the merrier.',
-    studyStyle: ['Group study', 'Problem solving', 'Teaching others'],
-    mutualFriends: 5, reliability: 91, sessionsCompleted: 34, compatibility: 88, active: false,
-  },
-  {
-    id: '4', name: 'Priya R.', initial: 'P',
-    courses: ['CSC108', 'PSY100', 'PHL101'],
-    sharedCourses: ['PSY100'],
-    freeSlots: ['Tue 3-5pm', 'Fri 10am-12pm'],
-    intensity: 'Light', location: 'Online (Zoom)', preference: 'Online',
-    bio: 'First year! Looking for chill study partners. I make great flashcards.',
-    studyStyle: ['Flashcards', 'Silent study', 'Review sessions'],
-    mutualFriends: 0, reliability: 78, sessionsCompleted: 6, compatibility: 72, active: true,
-  },
-  {
-    id: '5', name: 'David L.', initial: 'D',
-    courses: ['CSC263', 'CSC373', 'MAT237'],
-    sharedCourses: ['CSC263', 'MAT237'],
-    freeSlots: ['Mon 4-6pm', 'Wed 10am-12pm', 'Fri 2-4pm'],
-    intensity: 'Intense', location: 'Bahen Centre', preference: 'In-person',
-    bio: 'PEY returning student. I explain things well and need accountability partners.',
-    studyStyle: ['Teaching others', 'Whiteboard', 'Past exams'],
-    mutualFriends: 2, reliability: 96, sessionsCompleted: 42, compatibility: 90, active: true,
-  },
-  {
-    id: '6', name: 'Emily W.', initial: 'E',
-    courses: ['STA257', 'ECO101', 'HIS101'],
-    sharedCourses: ['STA257'],
-    freeSlots: ['Tue 1-3pm', 'Thu 10am-12pm'],
-    intensity: 'Moderate', location: 'Hart House', preference: 'Both',
-    bio: 'Arts & Science student. Good at keeping study sessions focused and on-track.',
-    studyStyle: ['Pomodoro', 'Discussion', 'Note comparison'],
-    mutualFriends: 1, reliability: 85, sessionsCompleted: 11, compatibility: 76, active: true,
-  },
-  {
-    id: '7', name: 'Michael C.', initial: 'M',
-    courses: ['CSC148', 'CSC108', 'MAT237'],
-    sharedCourses: ['MAT237'],
-    freeSlots: ['Mon 1-3pm', 'Thu 3-5pm'],
-    intensity: 'Moderate', location: 'Robarts Library', preference: 'In-person',
-    bio: 'Switching into CS from engineering. Always up for problem sets and coffee.',
-    studyStyle: ['Problem solving', 'Coffee shop study', 'Discussion'],
-    mutualFriends: 4, reliability: 82, sessionsCompleted: 9, compatibility: 79, active: false,
-  },
-  {
-    id: '8', name: 'Yuki N.', initial: 'Y',
-    courses: ['CSC263', 'AST101', 'PHL101'],
-    sharedCourses: ['CSC263'],
-    freeSlots: ['Wed 2-4pm', 'Fri 11am-1pm'],
-    intensity: 'Light', location: 'Online (Discord)', preference: 'Online',
-    bio: 'International student from Japan. Let\'s study together online — flexible timezone.',
-    studyStyle: ['Online co-working', 'Silent study', 'Review sessions'],
-    mutualFriends: 0, reliability: 90, sessionsCompleted: 18, compatibility: 74, active: true,
-  },
-];
+/** Derive a stable numeric index from a string id for avatar gradient selection */
+function idToIndex(id: string): number {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = ((hash << 5) - hash + id.charCodeAt(i)) | 0;
+  return Math.abs(hash);
+}
 
-type StudySession = {
-  id: string;
-  course: string;
-  date: string;
-  time: string;
-  location: string;
-  duration: string;
-  participants: { initial: string; gradIdx: number }[];
-  goal?: string;
-  isPublic: boolean;
-};
+/** Map a StudySessionItem from the API into the shape the SessionCard expects */
+function mapSession(s: StudySessionItem) {
+  const dateObj = new Date(s.date);
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
 
-const UPCOMING_SESSIONS: StudySession[] = [
-  {
-    id: '1', course: 'CSC263', date: 'Today', time: '3:00 PM', location: 'Robarts L3',
-    duration: '2h', participants: [{ initial: 'A', gradIdx: 0 }, { initial: 'D', gradIdx: 4 }],
-    goal: 'Amortized analysis practice', isPublic: false,
-  },
-  {
-    id: '2', course: 'MAT237', date: 'Tomorrow', time: '10:00 AM', location: 'Bahen 2270',
-    duration: '1.5h', participants: [{ initial: 'J', gradIdx: 2 }, { initial: 'A', gradIdx: 0 }, { initial: 'M', gradIdx: 6 }],
-    goal: 'Problem set 8 review', isPublic: true,
-  },
-  {
-    id: '3', course: 'STA257', date: 'Thu, Mar 18', time: '2:00 PM', location: 'Online (Zoom)',
-    duration: '1h', participants: [{ initial: 'E', gradIdx: 5 }],
-    goal: 'Midterm prep', isPublic: false,
-  },
-];
+  let dateLabel: string;
+  if (dateObj.toDateString() === now.toDateString()) {
+    dateLabel = 'Today';
+  } else if (dateObj.toDateString() === tomorrow.toDateString()) {
+    dateLabel = 'Tomorrow';
+  } else {
+    dateLabel = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+
+  const timeLabel = dateObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+  const participants = (s.participants ?? []).map((p) => ({
+    initial: p.user.handle?.[0]?.toUpperCase() ?? '?',
+    gradIdx: idToIndex(p.user.id) % AVATAR_GRADS.length,
+  }));
+
+  return {
+    id: s.id,
+    course: s.courseCode,
+    date: dateLabel,
+    time: timeLabel,
+    location: s.location,
+    duration: s.duration,
+    participants,
+    goal: s.goal,
+    isPublic: s.isPublic,
+    maxParticipants: s.maxParticipants,
+    participantCount: s.participantCount,
+  };
+}
+
+type MappedSession = ReturnType<typeof mapSession>;
 
 const INTENSITY_COLORS: Record<string, string> = {
   Light: '#3DAB73', Moderate: '#F1973B', Intense: '#E05555',
@@ -246,7 +170,7 @@ const mt = StyleSheet.create({
 export type SwipeCardRef = { swipeLeft: () => void; swipeRight: () => void };
 
 const SwipeCard = forwardRef<SwipeCardRef, {
-  buddy: StudyBuddy; onSwipeLeft: () => void; onSwipeRight: () => void; onTap: () => void;
+  buddy: StudyBuddyMatch; onSwipeLeft: () => void; onSwipeRight: () => void; onTap: () => void;
 }>(({ buddy, onSwipeLeft, onSwipeRight, onTap }, ref) => {
   const pan = useRef(new Animated.ValueXY()).current;
   const rotate = pan.x.interpolate({ inputRange: [-200, 0, 200], outputRange: ['-15deg', '0deg', '15deg'] });
@@ -278,7 +202,7 @@ const SwipeCard = forwardRef<SwipeCardRef, {
     })
   ).current;
 
-  const grad = avatarGrad(parseInt(buddy.id));
+  const grad = avatarGrad(idToIndex(buddy.id));
 
   return (
     <Animated.View
@@ -342,19 +266,13 @@ const SwipeCard = forwardRef<SwipeCardRef, {
 
         {/* Bottom stats */}
         <View style={sw.statsRow}>
-          <View style={[sw.intensityBadge, { backgroundColor: INTENSITY_COLORS[buddy.intensity] + '15' }]}>
-            <Text style={[sw.intensityText, { color: INTENSITY_COLORS[buddy.intensity] }]}>{buddy.intensity}</Text>
+          <View style={[sw.intensityBadge, { backgroundColor: (INTENSITY_COLORS[buddy.intensity] ?? T.textMuted) + '15' }]}>
+            <Text style={[sw.intensityText, { color: INTENSITY_COLORS[buddy.intensity] ?? T.textMuted }]}>{buddy.intensity}</Text>
           </View>
           <View style={sw.stat}>
             <Ionicons name="location-outline" size={12} color={T.textMuted} />
             <Text style={sw.statText}>{buddy.location}</Text>
           </View>
-          {buddy.mutualFriends > 0 && (
-            <View style={sw.stat}>
-              <Ionicons name="people-outline" size={12} color={T.textMuted} />
-              <Text style={sw.statText}>{buddy.mutualFriends} mutual</Text>
-            </View>
-          )}
         </View>
       </TouchableOpacity>
     </Animated.View>
@@ -455,8 +373,8 @@ const sa = StyleSheet.create({
 });
 
 // ─── Explorer Card (Grid Mode) ───────────────────────────────────────────────
-function ExplorerCard({ buddy, onPress }: { buddy: StudyBuddy; onPress: () => void }) {
-  const grad = avatarGrad(parseInt(buddy.id));
+function ExplorerCard({ buddy, onPress }: { buddy: StudyBuddyMatch; onPress: () => void }) {
+  const grad = avatarGrad(idToIndex(buddy.id));
   return (
     <TouchableOpacity activeOpacity={0.82} onPress={onPress} style={ec.card}>
       <View style={ec.inner}>
@@ -519,10 +437,10 @@ const ec = StyleSheet.create({
 
 // ─── Profile Preview Modal ───────────────────────────────────────────────────
 function ProfilePreview({ buddy, visible, onClose }: {
-  buddy: StudyBuddy | null; visible: boolean; onClose: () => void;
+  buddy: StudyBuddyMatch | null; visible: boolean; onClose: () => void;
 }) {
   if (!buddy) return null;
-  const grad = avatarGrad(parseInt(buddy.id));
+  const grad = avatarGrad(idToIndex(buddy.id));
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -538,8 +456,8 @@ function ProfilePreview({ buddy, visible, onClose }: {
               <View style={{ flex: 1 }}>
                 <Text style={pp.name}>{buddy.name}</Text>
                 <View style={pp.badges}>
-                  <View style={[pp.intensityBadge, { backgroundColor: INTENSITY_COLORS[buddy.intensity] + '15' }]}>
-                    <Text style={[pp.intensityText, { color: INTENSITY_COLORS[buddy.intensity] }]}>{buddy.intensity}</Text>
+                  <View style={[pp.intensityBadge, { backgroundColor: (INTENSITY_COLORS[buddy.intensity] ?? T.textMuted) + '15' }]}>
+                    <Text style={[pp.intensityText, { color: INTENSITY_COLORS[buddy.intensity] ?? T.textMuted }]}>{buddy.intensity}</Text>
                   </View>
                   <View style={pp.prefBadge}>
                     <Text style={pp.prefText}>{buddy.preference}</Text>
@@ -596,8 +514,8 @@ function ProfilePreview({ buddy, visible, onClose }: {
                 <Text style={pp.statLabel}>Sessions</Text>
               </View>
               <View style={pp.statBox}>
-                <Text style={pp.statNum}>{buddy.mutualFriends}</Text>
-                <Text style={pp.statLabel}>Mutual</Text>
+                <Text style={pp.statNum}>{buddy.sharedCourses.length}</Text>
+                <Text style={pp.statLabel}>Shared</Text>
               </View>
             </View>
 
@@ -688,7 +606,7 @@ const pp = StyleSheet.create({
 });
 
 // ─── Upcoming Session Card ───────────────────────────────────────────────────
-function SessionCard({ session }: { session: StudySession }) {
+function SessionCard({ session, onJoin }: { session: MappedSession; onJoin?: () => void }) {
   return (
     <View style={sc.card}>
       <View style={sc.inner}>
@@ -726,7 +644,7 @@ function SessionCard({ session }: { session: StudySession }) {
               </LinearGradient>
             ))}
           </View>
-          <TouchableOpacity activeOpacity={0.7} style={sc.joinBtn}>
+          <TouchableOpacity activeOpacity={0.7} style={sc.joinBtn} onPress={onJoin}>
             <Text style={sc.joinText}>Join</Text>
           </TouchableOpacity>
         </View>
@@ -773,16 +691,28 @@ const sc = StyleSheet.create({
 });
 
 // ─── Create Session Sheet ────────────────────────────────────────────────────
-function CreateSessionSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const [course, setCourse] = useState('CSC263');
+function CreateSessionSheet({ visible, onClose, buddies }: {
+  visible: boolean; onClose: () => void; buddies: StudyBuddyMatch[];
+}) {
+  const [course, setCourse] = useState('');
   const [location, setLocation] = useState('');
   const [goal, setGoal] = useState('');
+  const [duration, setDuration] = useState('1h');
   const [isPublic, setIsPublic] = useState(false);
   const [invitedIds, setInvitedIds] = useState<Set<string>>(new Set());
-  const COURSE_OPTIONS = ['CSC263', 'MAT237', 'STA257', 'PSY100', 'CSC148'];
 
-  const matchedBuddies = BUDDIES.filter((b) =>
-    b.sharedCourses.includes(course)
+  const createSession = useCreateStudySession();
+
+  // Build course options from available buddy courses
+  const courseOptions = Array.from(
+    new Set(buddies.flatMap((b) => b.sharedCourses)),
+  ).sort();
+
+  // Auto-select first course if none selected
+  const activeCourse = course || courseOptions[0] || '';
+
+  const matchedBuddies = buddies.filter((b) =>
+    b.sharedCourses.includes(activeCourse)
   ).sort((a, b) => b.compatibility - a.compatibility);
 
   const toggleInvite = (id: string) => {
@@ -791,6 +721,21 @@ function CreateSessionSheet({ visible, onClose }: { visible: boolean; onClose: (
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
+  };
+
+  const handleSubmit = () => {
+    if (!activeCourse) return;
+    createSession.mutate(
+      {
+        courseCode: activeCourse,
+        date: new Date().toISOString(),
+        location,
+        duration,
+        goal: goal || undefined,
+        isPublic,
+      },
+      { onSuccess: () => onClose() },
+    );
   };
 
   return (
@@ -804,13 +749,13 @@ function CreateSessionSheet({ visible, onClose }: { visible: boolean; onClose: (
             {/* Course */}
             <Text style={cs.label}>Course</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-              {COURSE_OPTIONS.map((c) => (
+              {courseOptions.map((c) => (
                 <TouchableOpacity
                   key={c} activeOpacity={0.7}
-                  style={[cs.chip, course === c && cs.chipActive]}
+                  style={[cs.chip, activeCourse === c && cs.chipActive]}
                   onPress={() => setCourse(c)}
                 >
-                  <Text style={[cs.chipText, course === c && cs.chipTextActive]}>{c}</Text>
+                  <Text style={[cs.chipText, activeCourse === c && cs.chipTextActive]}>{c}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -832,8 +777,12 @@ function CreateSessionSheet({ visible, onClose }: { visible: boolean; onClose: (
             <Text style={cs.label}>Duration</Text>
             <View style={cs.durRow}>
               {['30min', '1h', '1.5h', '2h', '3h'].map((d) => (
-                <TouchableOpacity key={d} activeOpacity={0.7} style={cs.durChip}>
-                  <Text style={cs.durText}>{d}</Text>
+                <TouchableOpacity
+                  key={d} activeOpacity={0.7}
+                  style={[cs.durChip, duration === d && cs.chipActive]}
+                  onPress={() => setDuration(d)}
+                >
+                  <Text style={[cs.durText, duration === d && cs.chipTextActive]}>{d}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -854,7 +803,7 @@ function CreateSessionSheet({ visible, onClose }: { visible: boolean; onClose: (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
                 {matchedBuddies.map((b) => {
                   const selected = invitedIds.has(b.id);
-                  const grad = avatarGrad(parseInt(b.id));
+                  const grad = avatarGrad(idToIndex(b.id));
                   return (
                     <TouchableOpacity
                       key={b.id} activeOpacity={0.7}
@@ -904,10 +853,16 @@ function CreateSessionSheet({ visible, onClose }: { visible: boolean; onClose: (
             </TouchableOpacity>
 
             {/* Submit */}
-            <TouchableOpacity activeOpacity={0.8} onPress={onClose}>
-              <LinearGradient colors={CTA} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={cs.submitBtn}>
-                <Ionicons name="add-circle-outline" size={18} color={T.white} />
-                <Text style={cs.submitText}>Create Session</Text>
+            <TouchableOpacity activeOpacity={0.8} onPress={handleSubmit} disabled={createSession.isPending}>
+              <LinearGradient colors={CTA} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[cs.submitBtn, createSession.isPending && { opacity: 0.6 }]}>
+                {createSession.isPending ? (
+                  <ActivityIndicator size="small" color={T.white} />
+                ) : (
+                  <>
+                    <Ionicons name="add-circle-outline" size={18} color={T.white} />
+                    <Text style={cs.submitText}>Create Session</Text>
+                  </>
+                )}
               </LinearGradient>
             </TouchableOpacity>
           </ScrollView>
@@ -1013,6 +968,38 @@ const shr = StyleSheet.create({
 // ─── Explorer Sort Chips ─────────────────────────────────────────────────────
 const EXPLORE_SORTS = ['Best Match', 'Nearby', 'Same Course', 'Most Active'];
 
+// ─── Loading Placeholder ─────────────────────────────────────────────────────
+function LoadingPlaceholder() {
+  return (
+    <View style={lp.container}>
+      <ActivityIndicator size="large" color={T.accentPurple} />
+      <Text style={lp.text}>Finding study buddies...</Text>
+    </View>
+  );
+}
+
+const lp = StyleSheet.create({
+  container: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 },
+  text: { fontSize: 14, fontWeight: '600', color: T.textMuted },
+});
+
+// ─── Empty State ─────────────────────────────────────────────────────────────
+function EmptyBuddiesState() {
+  return (
+    <View style={emp.container}>
+      <Ionicons name="people-outline" size={48} color={T.textMuted} />
+      <Text style={emp.title}>No matches yet</Text>
+      <Text style={emp.sub}>Update your study profile to get matched with classmates</Text>
+    </View>
+  );
+}
+
+const emp = StyleSheet.create({
+  container: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, padding: 40 },
+  title: { fontSize: 16, fontWeight: '700', color: T.textPrimary },
+  sub: { fontSize: 13, color: T.textMuted, textAlign: 'center', lineHeight: 18 },
+});
+
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 export default function StudyBuddyScreen() {
   const router = useRouter();
@@ -1020,24 +1007,67 @@ export default function StudyBuddyScreen() {
   const [mode, setMode] = useState<'match' | 'explore'>('match');
   const [currentIdx, setCurrentIdx] = useState(0);
   const [showProfile, setShowProfile] = useState(false);
-  const [selectedBuddy, setSelectedBuddy] = useState<StudyBuddy | null>(null);
+  const [selectedBuddy, setSelectedBuddy] = useState<StudyBuddyMatch | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [exploreSort, setExploreSort] = useState('Best Match');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const { data: buddies, isLoading: buddiesLoading, refetch: refetchBuddies } = useStudyBuddyMatches();
+  const { data: sessions, isLoading: sessionsLoading, refetch: refetchSessions } = useStudySessions();
+  const joinSession = useJoinStudySession();
+
+  const buddyList = buddies ?? [];
+  const mappedSessions = (sessions ?? []).map(mapSession);
 
   const swipeCardRef = useRef<SwipeCardRef>(null);
-  const currentBuddy = BUDDIES[currentIdx % BUDDIES.length];
+  const currentBuddy = buddyList.length > 0 ? buddyList[currentIdx % buddyList.length] : null;
 
   const nextBuddy = () => setCurrentIdx((prev) => prev + 1);
   const handleSkip = useCallback(() => swipeCardRef.current?.swipeLeft(), []);
   const handleInvite = useCallback(() => swipeCardRef.current?.swipeRight(), []);
 
-  const sortedBuddies = [...BUDDIES].sort((a, b) => {
+  const handleJoinSession = (sessionId: string) => {
+    joinSession.mutate(sessionId);
+  };
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([refetchBuddies(), refetchSessions()]);
+    setRefreshing(false);
+  }, [refetchBuddies, refetchSessions]);
+
+  const sortedBuddies = [...buddyList].sort((a, b) => {
     switch (exploreSort) {
       case 'Same Course': return b.sharedCourses.length - a.sharedCourses.length;
       case 'Most Active': return (b.active ? 1 : 0) - (a.active ? 1 : 0);
       default: return b.compatibility - a.compatibility;
     }
   });
+
+  // ─── Sessions horizontal list (shared by both modes) ─────────────────────
+  const SessionsList = () => (
+    <View style={{ marginTop: 6 }}>
+      <SectionHeader title="Upcoming Sessions" icon="calendar-outline" iconColor={T.accentBlue} />
+      {sessionsLoading ? (
+        <View style={{ paddingHorizontal: 22, paddingTop: 10 }}>
+          <ActivityIndicator size="small" color={T.accentBlue} />
+        </View>
+      ) : mappedSessions.length > 0 ? (
+        <ScrollView
+          horizontal showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 22, gap: 10, paddingTop: 6 }}
+        >
+          {mappedSessions.map((ses) => (
+            <SessionCard key={ses.id} session={ses} onJoin={() => handleJoinSession(ses.id)} />
+          ))}
+        </ScrollView>
+      ) : (
+        <Text style={{ paddingHorizontal: 22, paddingTop: 6, fontSize: 12, color: T.textMuted, fontStyle: 'italic' }}>
+          No upcoming sessions
+        </Text>
+      )}
+    </View>
+  );
 
   return (
     <View style={s.root}>
@@ -1052,49 +1082,39 @@ export default function StudyBuddyScreen() {
         {mode === 'match' ? (
           /* ─── Matching Mode ─── */
           <View style={s.matchContainer}>
-            {/* Upcoming sessions */}
-            <View style={{ marginTop: 6 }}>
-              <SectionHeader title="Upcoming Sessions" icon="calendar-outline" iconColor={T.accentBlue} />
-              <ScrollView
-                horizontal showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ paddingHorizontal: 22, gap: 10, paddingTop: 6 }}
-              >
-                {UPCOMING_SESSIONS.map((ses) => (
-                  <SessionCard key={ses.id} session={ses} />
-                ))}
-              </ScrollView>
-            </View>
+            <SessionsList />
 
             {/* Swipe card */}
             <View style={s.swipeArea}>
-              <SwipeCard
-                ref={swipeCardRef}
-                key={currentIdx}
-                buddy={currentBuddy}
-                onSwipeLeft={nextBuddy}
-                onSwipeRight={nextBuddy}
-                onTap={() => { setSelectedBuddy(currentBuddy); setShowProfile(true); }}
-              />
+              {buddiesLoading ? (
+                <LoadingPlaceholder />
+              ) : currentBuddy ? (
+                <SwipeCard
+                  ref={swipeCardRef}
+                  key={currentIdx}
+                  buddy={currentBuddy}
+                  onSwipeLeft={nextBuddy}
+                  onSwipeRight={nextBuddy}
+                  onTap={() => { setSelectedBuddy(currentBuddy); setShowProfile(true); }}
+                />
+              ) : (
+                <EmptyBuddiesState />
+              )}
             </View>
 
-            <SwipeActions onSkip={handleSkip} onInvite={handleInvite} />
+            {currentBuddy && <SwipeActions onSkip={handleSkip} onInvite={handleInvite} />}
             <View style={{ flex: 0.1 }} />
           </View>
         ) : (
           /* ─── Explorer Mode ─── */
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.exploreScroll}>
-            {/* Upcoming sessions */}
-            <View style={{ marginTop: 6 }}>
-              <SectionHeader title="Upcoming Sessions" icon="calendar-outline" iconColor={T.accentBlue} />
-              <ScrollView
-                horizontal showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ paddingHorizontal: 22, gap: 10, paddingTop: 6 }}
-              >
-              {UPCOMING_SESSIONS.map((ses) => (
-                <SessionCard key={ses.id} session={ses} />
-              ))}
-              </ScrollView>
-            </View>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={s.exploreScroll}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={T.accentPurple} />
+            }
+          >
+            <SessionsList />
 
             {/* Sort chips */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 22, gap: 6 }}>
@@ -1110,15 +1130,21 @@ export default function StudyBuddyScreen() {
             </ScrollView>
 
             {/* Grid */}
-            <View style={s.grid}>
-              {sortedBuddies.map((b) => (
-                <ExplorerCard
-                  key={b.id}
-                  buddy={b}
-                  onPress={() => { setSelectedBuddy(b); setShowProfile(true); }}
-                />
-              ))}
-            </View>
+            {buddiesLoading ? (
+              <LoadingPlaceholder />
+            ) : sortedBuddies.length > 0 ? (
+              <View style={s.grid}>
+                {sortedBuddies.map((b) => (
+                  <ExplorerCard
+                    key={b.id}
+                    buddy={b}
+                    onPress={() => { setSelectedBuddy(b); setShowProfile(true); }}
+                  />
+                ))}
+              </View>
+            ) : (
+              <EmptyBuddiesState />
+            )}
 
             <View style={{ height: 20 }} />
           </ScrollView>
@@ -1135,6 +1161,7 @@ export default function StudyBuddyScreen() {
       <CreateSessionSheet
         visible={showCreate}
         onClose={() => setShowCreate(false)}
+        buddies={buddyList}
       />
     </View>
   );

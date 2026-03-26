@@ -29,6 +29,22 @@ const message_entity_1 = require("./database/entities/message.entity");
 const notification_entity_1 = require("./database/entities/notification.entity");
 const report_entity_1 = require("./database/entities/report.entity");
 const moderation_action_entity_1 = require("./database/entities/moderation-action.entity");
+const poll_entity_1 = require("./database/entities/poll.entity");
+const poll_option_entity_1 = require("./database/entities/poll-option.entity");
+const poll_vote_entity_1 = require("./database/entities/poll-vote.entity");
+const bookmark_entity_1 = require("./database/entities/bookmark.entity");
+const user_block_entity_1 = require("./database/entities/user-block.entity");
+const hashtag_entity_1 = require("./database/entities/hashtag.entity");
+const post_hashtag_entity_1 = require("./database/entities/post-hashtag.entity");
+const course_review_entity_1 = require("./database/entities/course-review.entity");
+const professor_entity_1 = require("./database/entities/professor.entity");
+const professor_review_entity_1 = require("./database/entities/professor-review.entity");
+const study_buddy_profile_entity_1 = require("./database/entities/study-buddy-profile.entity");
+const study_session_entity_1 = require("./database/entities/study-session.entity");
+const study_session_participant_entity_1 = require("./database/entities/study-session-participant.entity");
+const campus_location_entity_1 = require("./database/entities/campus-location.entity");
+const campus_event_entity_1 = require("./database/entities/campus-event.entity");
+const saved_place_entity_1 = require("./database/entities/saved-place.entity");
 const auth_module_1 = require("./modules/auth/auth.module");
 const users_module_1 = require("./modules/users/users.module");
 const universities_module_1 = require("./modules/universities/universities.module");
@@ -40,6 +56,17 @@ const feed_module_1 = require("./modules/feed/feed.module");
 const messages_module_1 = require("./modules/messages/messages.module");
 const notifications_module_1 = require("./modules/notifications/notifications.module");
 const moderation_module_1 = require("./modules/moderation/moderation.module");
+const polls_module_1 = require("./modules/polls/polls.module");
+const bookmarks_module_1 = require("./modules/bookmarks/bookmarks.module");
+const blocks_module_1 = require("./modules/blocks/blocks.module");
+const hashtags_module_1 = require("./modules/hashtags/hashtags.module");
+const health_module_1 = require("./modules/health/health.module");
+const course_reviews_module_1 = require("./modules/course-reviews/course-reviews.module");
+const professors_module_1 = require("./modules/professors/professors.module");
+const study_buddy_module_1 = require("./modules/study-buddy/study-buddy.module");
+const campus_map_module_1 = require("./modules/campus-map/campus-map.module");
+const timetable_module_1 = require("./modules/timetable/timetable.module");
+const schedule_block_entity_1 = require("./database/entities/schedule-block.entity");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -64,6 +91,12 @@ exports.AppModule = AppModule = __decorate([
                         community_entity_1.Community, community_member_entity_1.CommunityMember, post_entity_1.Post, comment_entity_1.Comment, vote_entity_1.Vote,
                         conversation_entity_1.Conversation, conversation_participant_entity_1.ConversationParticipant, message_entity_1.Message,
                         notification_entity_1.Notification, report_entity_1.Report, moderation_action_entity_1.ModerationAction,
+                        poll_entity_1.Poll, poll_option_entity_1.PollOption, poll_vote_entity_1.PollVote,
+                        bookmark_entity_1.Bookmark, user_block_entity_1.UserBlock, hashtag_entity_1.Hashtag, post_hashtag_entity_1.PostHashtag,
+                        course_review_entity_1.CourseReview, professor_entity_1.Professor, professor_review_entity_1.ProfessorReview,
+                        study_buddy_profile_entity_1.StudyBuddyProfile, study_session_entity_1.StudySession, study_session_participant_entity_1.StudySessionParticipant,
+                        campus_location_entity_1.CampusLocation, campus_event_entity_1.CampusEvent, saved_place_entity_1.SavedPlace,
+                        schedule_block_entity_1.ScheduleBlock,
                     ],
                     synchronize: config.get('app.nodeEnv') === 'development',
                     logging: config.get('app.nodeEnv') === 'development',
@@ -88,6 +121,16 @@ exports.AppModule = AppModule = __decorate([
             messages_module_1.MessagesModule,
             notifications_module_1.NotificationsModule,
             moderation_module_1.ModerationModule,
+            polls_module_1.PollsModule,
+            bookmarks_module_1.BookmarksModule,
+            blocks_module_1.BlocksModule,
+            hashtags_module_1.HashtagsModule,
+            health_module_1.HealthModule,
+            course_reviews_module_1.CourseReviewsModule,
+            professors_module_1.ProfessorsModule,
+            study_buddy_module_1.StudyBuddyModule,
+            campus_map_module_1.CampusMapModule,
+            timetable_module_1.TimetableModule,
         ],
     })
 ], AppModule);

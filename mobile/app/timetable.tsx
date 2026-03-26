@@ -1,12 +1,19 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Pressable,
-  Dimensions, Animated, TextInput,
+  Dimensions, Animated, TextInput, ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import {
+  useSchedule,
+  useBulkImportSchedule,
+  useCreateScheduleBlock,
+  useDeleteScheduleBlock,
+  ScheduleBlockItem,
+} from '../src/services/queries';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -59,22 +66,6 @@ type ScheduleBlock = {
   type: 'class' | 'event' | 'personal';
 };
 
-const MOCK_SCHEDULE: ScheduleBlock[] = [
-  { id: '1', title: 'CSC263', subtitle: 'Data Structures', location: 'BA1190', professor: 'Prof. Horton', day: 1, startHour: 9, endHour: 10.5, colorIndex: 0, type: 'class' },
-  { id: '2', title: 'MAT237', subtitle: 'Multivariable Calc', location: 'SS2135', professor: 'Prof. Selick', day: 1, startHour: 11, endHour: 12, colorIndex: 1, type: 'class' },
-  { id: '3', title: 'CSC108', subtitle: 'Intro to CS', location: 'BA1170', professor: 'Prof. Liu', day: 1, startHour: 14, endHour: 15, colorIndex: 2, type: 'class' },
-  { id: '4', title: 'CSC263', subtitle: 'Data Structures', location: 'BA1190', professor: 'Prof. Horton', day: 3, startHour: 9, endHour: 10.5, colorIndex: 0, type: 'class' },
-  { id: '5', title: 'STA257', subtitle: 'Probability & Stats', location: 'SS1085', professor: 'Prof. Brenner', day: 2, startHour: 10, endHour: 11.5, colorIndex: 3, type: 'class' },
-  { id: '6', title: 'MAT237', subtitle: 'Multivariable Calc', location: 'SS2135', professor: 'Prof. Selick', day: 3, startHour: 11, endHour: 12, colorIndex: 1, type: 'class' },
-  { id: '7', title: 'PSY100', subtitle: 'Intro Psychology', location: 'KP108', professor: 'Prof. Bhatt', day: 2, startHour: 13, endHour: 14.5, colorIndex: 4, type: 'class' },
-  { id: '8', title: 'CSC108', subtitle: 'Intro to CS', location: 'BA1170', professor: 'Prof. Liu', day: 4, startHour: 14, endHour: 15, colorIndex: 2, type: 'class' },
-  { id: '9', title: 'STA257', subtitle: 'Probability & Stats', location: 'SS1085', professor: 'Prof. Brenner', day: 4, startHour: 10, endHour: 11.5, colorIndex: 3, type: 'class' },
-  { id: '10', title: 'Study Group', subtitle: 'CSC263 prep', location: 'Robarts L3', day: 3, startHour: 15, endHour: 16.5, colorIndex: 5, type: 'personal' },
-  { id: '11', title: 'Gym', location: 'AC Gym', day: 1, startHour: 16, endHour: 17, colorIndex: 6, type: 'personal' },
-  { id: '12', title: 'PSY100', subtitle: 'Intro Psychology', location: 'KP108', professor: 'Prof. Bhatt', day: 4, startHour: 13, endHour: 14.5, colorIndex: 4, type: 'class' },
-  { id: '13', title: 'CS Club', subtitle: 'Weekly meetup', location: 'BA2270', day: 5, startHour: 14, endHour: 15.5, colorIndex: 7, type: 'event' },
-  { id: '14', title: 'Gym', location: 'AC Gym', day: 5, startHour: 11, endHour: 12, colorIndex: 6, type: 'personal' },
-];
 
 // ─── AI Import mock detected items ───────────────────────────────────────────
 type DetectedCourse = {
@@ -87,13 +78,6 @@ type DetectedCourse = {
   confirmed: boolean;
 };
 
-const MOCK_DETECTED: DetectedCourse[] = [
-  { id: 'd1', name: 'CSC263 — Data Structures', day: 'Mon, Wed', time: '9:00 – 10:30 AM', location: 'BA1190', confidence: 96, confirmed: false },
-  { id: 'd2', name: 'MAT237 — Multivariable Calc', day: 'Mon, Wed', time: '11:00 AM – 12:00 PM', location: 'SS2135', confidence: 92, confirmed: false },
-  { id: 'd3', name: 'STA257 — Probability & Stats', day: 'Tue, Thu', time: '10:00 – 11:30 AM', location: 'SS1085', confidence: 88, confirmed: false },
-  { id: 'd4', name: 'PSY100 — Intro Psychology', day: 'Tue, Thu', time: '1:00 – 2:30 PM', location: 'KP108', confidence: 94, confirmed: false },
-  { id: 'd5', name: 'CSC108 — Intro to CS', day: 'Mon, Thu', time: '2:00 – 3:00 PM', location: 'BA1170', confidence: 90, confirmed: false },
-];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatHour(h: number): string {
@@ -968,7 +952,7 @@ const im = StyleSheet.create({
 });
 
 // ─── AI Processing screen ────────────────────────────────────────────────────
-function AIProcessingView({ progress }: { progress: number }) {
+function AIProcessingView({ progress, detectedItems }: { progress: number; detectedItems: DetectedCourse[] }) {
   return (
     <View style={ap.wrap}>
       <View style={ap.previewCard}>
@@ -1005,7 +989,7 @@ function AIProcessingView({ progress }: { progress: number }) {
       </View>
 
       <View style={ap.detectedList}>
-        {MOCK_DETECTED.slice(0, Math.floor(progress / 20)).map((item) => (
+        {detectedItems.slice(0, Math.floor(progress / 20)).map((item: DetectedCourse) => (
           <View key={item.id} style={ap.detectedItem}>
             <Ionicons name="checkmark-circle" size={16} color="#3DAB73" />
             <Text style={ap.detectedText}>{item.name}</Text>
@@ -1439,6 +1423,9 @@ type ScreenMode = 'timetable' | 'ai-processing' | 'ai-review' | 'wallpaper';
 
 export default function TimetableScreen() {
   const router = useRouter();
+  const { data: schedule = [], isLoading, refetch } = useSchedule();
+  const bulkImport = useBulkImportSchedule();
+
   const [selectedDay, setSelectedDay] = useState(new Date().getDay());
   const [selectedBlock, setSelectedBlock] = useState<ScheduleBlock | null>(null);
   const [blockDetailVisible, setBlockDetailVisible] = useState(false);
@@ -1448,6 +1435,7 @@ export default function TimetableScreen() {
   const [addEventDay, setAddEventDay] = useState(new Date().getDay());
   const [mode, setMode] = useState<ScreenMode>('timetable');
   const [aiProgress, setAiProgress] = useState(0);
+  const [detectedItems, setDetectedItems] = useState<DetectedCourse[]>([]);
 
   const today = new Date();
   const startOfWeek = new Date(today);
@@ -1469,6 +1457,10 @@ export default function TimetableScreen() {
   const startAIImport = () => {
     setMode('ai-processing');
     setAiProgress(0);
+    // TODO: Replace with real AI image recognition call.
+    // For now simulate progress; detected items come from local state
+    // (populated by real image recognition when integrated).
+    setDetectedItems([]);
     let p = 0;
     const interval = setInterval(() => {
       p += Math.floor(Math.random() * 15) + 5;
@@ -1477,8 +1469,78 @@ export default function TimetableScreen() {
     }, 500);
   };
 
+  const handleConfirmImport = () => {
+    // Convert confirmed detected items into schedule blocks and bulk-import
+    const confirmedItems = detectedItems.filter((d) => d.confirmed !== false);
+    if (confirmedItems.length === 0) {
+      setMode('timetable');
+      return;
+    }
+
+    // Parse detected courses into ScheduleBlockItem format for the API
+    const blocks: Omit<ScheduleBlockItem, 'id'>[] = confirmedItems.flatMap((item, idx) => {
+      // Parse day string like "Mon, Wed" into day indices
+      const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+      const dayNames = item.day.split(',').map((d) => d.trim());
+      const dayIndices = dayNames.map((d) => {
+        // Handle full or abbreviated day names
+        const abbr = d.slice(0, 3);
+        return dayMap[abbr] ?? 1;
+      });
+
+      // Parse time string like "9:00 – 10:30 AM" into startHour/endHour
+      const timeMatch = item.time.match(/(\d{1,2}):?(\d{2})?\s*(AM|PM)?\s*[–—-]\s*(\d{1,2}):?(\d{2})?\s*(AM|PM)?/i);
+      let startHour = 9;
+      let endHour = 10;
+      if (timeMatch) {
+        let sh = parseInt(timeMatch[1], 10);
+        const sm = parseInt(timeMatch[2] || '0', 10);
+        const sAmPm = (timeMatch[3] || timeMatch[6] || 'AM').toUpperCase();
+        let eh = parseInt(timeMatch[4], 10);
+        const em = parseInt(timeMatch[5] || '0', 10);
+        const eAmPm = (timeMatch[6] || sAmPm).toUpperCase();
+
+        if (sAmPm === 'PM' && sh < 12) sh += 12;
+        if (sAmPm === 'AM' && sh === 12) sh = 0;
+        if (eAmPm === 'PM' && eh < 12) eh += 12;
+        if (eAmPm === 'AM' && eh === 12) eh = 0;
+
+        startHour = sh + sm / 60;
+        endHour = eh + em / 60;
+      }
+
+      // Parse title — split "CSC263 — Data Structures" into title / subtitle
+      const nameParts = item.name.split(/\s*[—–-]\s*/);
+      const title = nameParts[0] || item.name;
+      const subtitle = nameParts[1] || undefined;
+
+      return dayIndices.map((dayIdx) => ({
+        title,
+        subtitle,
+        location: item.location || undefined,
+        day: dayIdx,
+        startHour,
+        endHour,
+        colorIndex: idx % COURSE_COLORS.length,
+        type: 'class' as const,
+      }));
+    });
+
+    bulkImport.mutate(blocks, {
+      onSuccess: () => {
+        refetch();
+        setMode('timetable');
+        setDetectedItems([]);
+      },
+      onError: () => {
+        // Still go back to timetable on error — user can retry
+        setMode('timetable');
+      },
+    });
+  };
+
   if (mode === 'wallpaper') {
-    return <WallpaperPreview schedule={MOCK_SCHEDULE} onClose={() => setMode('timetable')} />;
+    return <WallpaperPreview schedule={schedule} onClose={() => setMode('timetable')} />;
   }
 
   return (
@@ -1490,11 +1552,18 @@ export default function TimetableScreen() {
           <>
             <Header onBack={() => router.back()} onImport={() => setImportVisible(true)} onExport={() => setExportVisible(true)} weekLabel={weekLabel} />
 
-            <DaySelector selectedDay={selectedDay} onSelect={setSelectedDay} schedule={MOCK_SCHEDULE} />
+            <DaySelector selectedDay={selectedDay} onSelect={setSelectedDay} schedule={schedule} />
 
             <DayHeaders selectedDay={selectedDay} />
 
-            <WeeklyGrid schedule={MOCK_SCHEDULE} onBlockPress={handleBlockPress} selectedDay={selectedDay} onEmptyPress={handleEmptyPress} />
+            {isLoading ? (
+              <View style={s.loadingWrap}>
+                <ActivityIndicator size="large" color={T.accentBlue} />
+                <Text style={s.loadingText}>Loading schedule...</Text>
+              </View>
+            ) : (
+              <WeeklyGrid schedule={schedule} onBlockPress={handleBlockPress} selectedDay={selectedDay} onEmptyPress={handleEmptyPress} />
+            )}
 
             {/* Floating add button */}
             <TouchableOpacity
@@ -1510,11 +1579,11 @@ export default function TimetableScreen() {
         )}
 
         {mode === 'ai-processing' && (
-          <AIProcessingView progress={aiProgress} />
+          <AIProcessingView progress={aiProgress} detectedItems={detectedItems} />
         )}
 
         {mode === 'ai-review' && (
-          <AIReviewView detected={MOCK_DETECTED} onConfirmAll={() => setMode('timetable')} onBack={() => setMode('timetable')} />
+          <AIReviewView detected={detectedItems} onConfirmAll={handleConfirmImport} onBack={() => setMode('timetable')} />
         )}
       </SafeAreaView>
 
@@ -1528,6 +1597,12 @@ export default function TimetableScreen() {
 
 const s = StyleSheet.create({
   root: { flex: 1 },
+  loadingWrap: {
+    flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12,
+  },
+  loadingText: {
+    fontSize: 14, fontWeight: '600', color: T.textMuted,
+  },
   fab: {
     position: 'absolute', bottom: 24, right: 22,
     shadowColor: T.accentBlue, shadowOffset: { width: 0, height: 6 },

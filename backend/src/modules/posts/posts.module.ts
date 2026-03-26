@@ -7,11 +7,13 @@ import { Vote } from '../../database/entities/vote.entity';
 import { PostsService } from './posts.service';
 import { PostsController } from './posts.controller';
 import { FeedModule } from '../feed/feed.module';
+import { HashtagsModule } from '../hashtags/hashtags.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Post, Community, CommunityMember, Vote]),
     FeedModule,
+    HashtagsModule,
   ],
   controllers: [PostsController],
   providers: [PostsService],

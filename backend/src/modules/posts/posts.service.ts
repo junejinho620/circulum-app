@@ -9,6 +9,7 @@ import { User } from '../../database/entities/user.entity';
 import { CommunityMember } from '../../database/entities/community-member.entity';
 import { Vote } from '../../database/entities/vote.entity';
 import { CreatePostDto } from './dto/create-post.dto';
+import { HashtagsService } from '../hashtags/hashtags.service';
 
 export type FeedSort = 'hot' | 'new' | 'top';
 
@@ -20,6 +21,7 @@ export class PostsService {
     @InjectRepository(CommunityMember) private memberRepo: Repository<CommunityMember>,
     @InjectRepository(Vote) private voteRepo: Repository<Vote>,
     private dataSource: DataSource,
+    private hashtagsService: HashtagsService,
   ) {}
 
   async create(dto: CreatePostDto, author: User): Promise<Post> {
@@ -43,6 +45,10 @@ export class PostsService {
       .set({ postCount: () => '"postCount" + 1' })
       .where('id = :id', { id: author.id })
       .execute();
+
+    // Extract and index hashtags from title + body (non-blocking)
+    const text = `${dto.title} ${dto.body || ''}`;
+    this.hashtagsService.processPostHashtags(saved.id, text).catch(() => {});
 
     return saved;
   }
@@ -171,6 +177,7 @@ export class PostsService {
     if (post.authorId !== userId) throw new ForbiddenException('Not authorized');
 
     await this.postRepo.update(id, { status: PostStatus.REMOVED });
+    this.hashtagsService.removePostHashtags(id).catch(() => {});
   }
 
   // Recalculate hot scores (called by background job)

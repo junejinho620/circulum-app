@@ -1,5 +1,6 @@
 import {
   Controller, Get, Post, Delete, Param, Query, UseGuards,
+  ParseIntPipe, DefaultValuePipe,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -16,8 +17,9 @@ export class CommunitiesController {
   findAll(
     @CurrentUser() user: User,
     @Query('type') type?: CommunityType,
+    @Query('limit', new DefaultValuePipe(30), ParseIntPipe) limit?: number,
   ) {
-    return this.service.findAll(user.universityId, type);
+    return this.service.findAll(user.universityId, type, Math.min(limit, 100));
   }
 
   @Get('my')

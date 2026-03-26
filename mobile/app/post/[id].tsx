@@ -2,14 +2,27 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, KeyboardAvoidingView, Platform, Animated,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
 import EmptyState from '../../src/components/common/EmptyState';
 import { DetailHeaderSkeleton, SkeletonList } from '../../src/components/common/Skeletons';
 import SuccessToast from '../../src/components/common/SuccessToast';
+import {
+  usePost,
+  useComments,
+  useVote,
+  useCreateComment,
+  type Post,
+  type Comment as APIComment,
+} from '../../src/services/queries';
+
+dayjs.extend(relativeTime);
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const T = {
@@ -104,68 +117,68 @@ function avatarGrad(handle: string): [string, string] {
   return AVATAR_GRADS[h];
 }
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
-const POST = {
-  category: 'Classes',
-  categoryIcon: 'school-outline' as const,
-  categoryColor: '#4B50F8',
-  board: 'MAT237 · U of T',
-  title: 'Anyone else think the MAT237 exam grading was way off this semester?',
-  body: "Got my midterm back and lost 8 points on a question I had completely correct. The TA wrote 'insufficient justification' but there's literally a full proof there. Has anyone else had issues with this?",
-  author: 'AnonBio12',
-  timestamp: '2h ago',
-  upvotes: 142,
-  commentCount: 38,
-  viewCount: 891,
-  activeNow: 12,
+// ─── Category helpers ─────────────────────────────────────────────────────────
+const CATEGORY_ICON_MAP: Record<string, string> = {
+  Classes: 'school-outline',
+  Social: 'people-outline',
+  Housing: 'home-outline',
+  Career: 'briefcase-outline',
+  Clubs: 'flag-outline',
+  General: 'chatbubbles-outline',
+  Advice: 'bulb-outline',
+  Memes: 'happy-outline',
 };
 
-const POST_MAP: Record<string, typeof POST> = {
-  '1': POST,
-  '2': POST,
-  '3': POST,
+const CATEGORY_COLOR_MAP: Record<string, string> = {
+  Classes: '#4B50F8',
+  Social: '#E655C5',
+  Housing: '#F59E0B',
+  Career: '#2BC77A',
+  Clubs: '#8B4DFF',
+  General: '#5F6472',
+  Advice: '#6B7CFF',
+  Memes: '#FB923C',
 };
 
-type Reply = {
+// ─── Local comment shape used by UI components ───────────────────────────────
+type LocalReply = {
   id: string; author: string; timestamp: string; text: string;
-  upvotes: number; isOp?: boolean;
+  upvotes: number; downvotes: number; isOp?: boolean; commentId: string;
 };
 
-type Comment = {
+type LocalComment = {
   id: string; author: string; timestamp: string; text: string;
-  upvotes: number; isHot?: boolean; isHelpful?: boolean;
-  replies: Reply[];
+  upvotes: number; downvotes: number; isHot?: boolean; isHelpful?: boolean;
+  replies: LocalReply[];
+  commentId: string;
 };
 
-const COMMENTS: Comment[] = [
-  {
-    id: 'c1', author: 'CosmicNova88', timestamp: '1h ago',
-    text: 'Same thing happened to me on Q3. Lost 5 points and the solution was identical to the one in lecture slides. Emailed the prof and got no response yet.',
-    upvotes: 47, isHot: true,
-    replies: [
-      { id: 'r1', author: 'BlueMoonTide', timestamp: '58m ago', text: 'Did you CC the department? That tends to get faster responses.', upvotes: 12 },
-      { id: 'r2', author: 'AnonBio12', timestamp: '45m ago', text: 'OP here — good idea, going to try that.', upvotes: 8, isOp: true },
-    ],
-  },
-  {
-    id: 'c2', author: 'SilverMaple33', timestamp: '52m ago',
-    text: "There's a formal grade review process through the registrar. Takes 2 weeks but if you're right you get the points back + apology.",
-    upvotes: 29, isHelpful: true, replies: [],
-  },
-  {
-    id: 'c3', author: 'VelvetStorm', timestamp: '34m ago',
-    text: 'This prof has a history of vague grading rubrics. Rate My Prof reviews are full of it. Worth documenting everything before submitting anything.',
-    upvotes: 18,
-    replies: [
-      { id: 'r3', author: 'PrismaticFox', timestamp: '20m ago', text: '100% agree. Take screenshots of everything before submitting any re-grade request.', upvotes: 7 },
-    ],
-  },
-  {
-    id: 'c4', author: 'AquaSpectra', timestamp: '12m ago',
-    text: 'Starting a group chat for everyone affected. DM me if you want in — strength in numbers.',
-    upvotes: 61, replies: [],
-  },
-];
+/** Convert API comments to the local shape used by the UI */
+function toLocalComments(apiComments: APIComment[], postAuthorId?: string): LocalComment[] {
+  return apiComments.map((c, idx) => ({
+    id: c.id,
+    commentId: c.id,
+    author: c.author.handle,
+    timestamp: dayjs(c.createdAt).fromNow(),
+    text: c.body,
+    upvotes: c.upvotes,
+    downvotes: c.downvotes,
+    // Mark first comment as "hot" if it has the most upvotes
+    isHot: idx === 0 && c.upvotes > 0,
+    // Mark second-most-upvoted as "helpful" if applicable
+    isHelpful: idx === 1 && c.upvotes > 0,
+    replies: (c.replies ?? []).map(r => ({
+      id: r.id,
+      commentId: r.id,
+      author: r.author.handle,
+      timestamp: dayjs(r.createdAt).fromNow(),
+      text: r.body,
+      upvotes: r.upvotes,
+      downvotes: r.downvotes,
+      isOp: postAuthorId ? r.author.id === postAuthorId : false,
+    })),
+  }));
+}
 
 // ─── GradAvatar ───────────────────────────────────────────────────────────────
 function GradAvatar({ handle, size = 36 }: { handle: string; size?: number }) {
@@ -184,31 +197,43 @@ function GradAvatar({ handle, size = 36 }: { handle: string; size?: number }) {
   );
 }
 
-// ─── UpvoteBtn ────────────────────────────────────────────────────────────────
-function UpvoteBtn({ count, size = 'md' }: { count: number; size?: 'sm' | 'md' }) {
-  const [liked, setLiked] = useState(false);
+// ─── VoteBtn ──────────────────────────────────────────────────────────────────
+function VoteBtn({
+  count,
+  size = 'md',
+  userVote,
+  onUpvote,
+  onDownvote,
+}: {
+  count: number;
+  size?: 'sm' | 'md';
+  userVote?: number;
+  onUpvote?: () => void;
+  onDownvote?: () => void;
+}) {
   const scale = useRef(new Animated.Value(1)).current;
   const isSm = size === 'sm';
+  const isUpvoted = userVote === 1;
 
   const press = () => {
-    setLiked(v => !v);
     Animated.sequence([
       Animated.timing(scale, { toValue: 1.4, duration: 90, useNativeDriver: true }),
       Animated.timing(scale, { toValue: 1, duration: 100, useNativeDriver: true }),
     ]).start();
+    onUpvote?.();
   };
 
   return (
     <TouchableOpacity onPress={press} activeOpacity={0.75} style={ub.wrap}>
       <Animated.View style={{ transform: [{ scale }] }}>
         <Ionicons
-          name={liked ? 'arrow-up-circle' : 'arrow-up-circle-outline'}
+          name={isUpvoted ? 'arrow-up-circle' : 'arrow-up-circle-outline'}
           size={isSm ? 16 : 18}
-          color={liked ? T.accentBlue : T.textMuted}
+          color={isUpvoted ? T.accentBlue : T.textMuted}
         />
       </Animated.View>
-      <Text style={[ub.count, isSm && ub.countSm, liked && { color: T.accentBlue }]}>
-        {liked ? count + 1 : count}
+      <Text style={[ub.count, isSm && ub.countSm, isUpvoted && { color: T.accentBlue }]}>
+        {count}
       </Text>
     </TouchableOpacity>
   );
@@ -220,9 +245,35 @@ const ub = StyleSheet.create({
   countSm: { fontSize: 11 },
 });
 
+// ─── Post hero card shape ─────────────────────────────────────────────────────
+type PostHeroData = {
+  category: string;
+  categoryIcon: string;
+  categoryColor: string;
+  board: string;
+  title: string;
+  body?: string;
+  author: string;
+  authorId: string;
+  timestamp: string;
+  upvotes: number;
+  downvotes: number;
+  commentCount: number;
+  userVote?: number;
+  postId: string;
+};
+
 // ─── PostHeroCard ─────────────────────────────────────────────────────────────
 // Premium anchor card for the original post — elevated, spacious, clear hierarchy.
-function PostHeroCard({ post, onAvatarPress }: { post: typeof POST; onAvatarPress: (handle: string) => void }) {
+function PostHeroCard({
+  post,
+  onAvatarPress,
+  onVote,
+}: {
+  post: PostHeroData;
+  onAvatarPress: (handle: string) => void;
+  onVote: (value: number) => void;
+}) {
   return (
     <View style={hero.outer}>
       {/* Subtle gradient glow behind card */}
@@ -234,7 +285,7 @@ function PostHeroCard({ post, onAvatarPress }: { post: typeof POST; onAvatarPres
         {/* Board context row */}
         <View style={hero.boardRow}>
           <View style={hero.boardPill}>
-            <Ionicons name={post.categoryIcon} size={12} color={post.categoryColor} />
+            <Ionicons name={post.categoryIcon as any} size={12} color={post.categoryColor} />
             <Text style={[hero.boardText, { color: post.categoryColor }]}>{post.board}</Text>
           </View>
           <Text style={hero.timestamp}>{post.timestamp}</Text>
@@ -258,12 +309,16 @@ function PostHeroCard({ post, onAvatarPress }: { post: typeof POST; onAvatarPres
         <Text style={hero.title}>{post.title}</Text>
 
         {/* Body */}
-        <Text style={hero.body}>{post.body}</Text>
+        {post.body ? <Text style={hero.body}>{post.body}</Text> : null}
 
         {/* Interaction bar */}
         <View style={hero.divider} />
         <View style={hero.actions}>
-          <UpvoteBtn count={post.upvotes} />
+          <VoteBtn
+            count={post.upvotes - post.downvotes}
+            userVote={post.userVote}
+            onUpvote={() => onVote(post.userVote === 1 ? 0 : 1)}
+          />
 
           <TouchableOpacity style={hero.actionBtn} activeOpacity={0.7}>
             <Ionicons name="chatbubble-outline" size={16} color={T.textMuted} />
@@ -347,7 +402,7 @@ const hero = StyleSheet.create({
 
 // ─── EngagementStrip ──────────────────────────────────────────────────────────
 // Lightweight context module: live participants + trending signal
-function EngagementStrip({ post }: { post: typeof POST }) {
+function EngagementStrip({ commentCount }: { commentCount: number }) {
   const handles = ['CosmicNova88', 'BlueMoonTide', 'VelvetStorm', 'AquaSpectra', 'PrismaticFox'];
   const overlap = 9;
   return (
@@ -370,7 +425,7 @@ function EngagementStrip({ post }: { post: typeof POST }) {
 
         <View style={{ flex: 1 }}>
           <Text style={es.stat}>
-            <Text style={{ fontWeight: '700', color: T.textPrimary }}>{post.activeNow} people</Text>
+            <Text style={{ fontWeight: '700', color: T.textPrimary }}>{commentCount} people</Text>
             {' '}in this thread now
           </Text>
         </View>
@@ -407,7 +462,7 @@ const es = StyleSheet.create({
 // ─── SortPills ────────────────────────────────────────────────────────────────
 type SortOption = 'top' | 'new' | 'relevant';
 
-function SortPills({ active, onSelect, post }: { active: SortOption; onSelect: (s: SortOption) => void; post: typeof POST }) {
+function SortPills({ active, onSelect, commentCount }: { active: SortOption; onSelect: (s: SortOption) => void; commentCount: number }) {
   const options: { key: SortOption; label: string; icon: string }[] = [
     { key: 'top', label: 'Top', icon: 'flame-outline' },
     { key: 'new', label: 'New', icon: 'time-outline' },
@@ -416,7 +471,7 @@ function SortPills({ active, onSelect, post }: { active: SortOption; onSelect: (
 
   return (
     <View style={sp.row}>
-      <Text style={sp.label}>{post.commentCount} replies</Text>
+      <Text style={sp.label}>{commentCount} replies</Text>
       <View style={{ flex: 1 }} />
       {options.map(o => {
         const isActive = active === o.key;
@@ -467,12 +522,13 @@ const sp = StyleSheet.create({
 
 // ─── HighlightedCommentCard ───────────────────────────────────────────────────
 // Used for top reply or helpful answer — subtle purple accent glow.
-function HighlightedCommentCard({ comment, label, labelColor, onReply, onAvatarPress }: {
-  comment: Comment;
+function HighlightedCommentCard({ comment, label, labelColor, onReply, onAvatarPress, onVote }: {
+  comment: LocalComment;
   label: string;
   labelColor: string;
   onReply: (author: string) => void;
   onAvatarPress: (handle: string) => void;
+  onVote: (commentId: string, value: number) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
 
@@ -520,7 +576,10 @@ function HighlightedCommentCard({ comment, label, labelColor, onReply, onAvatarP
 
           {/* Actions */}
           <View style={hl.actions}>
-            <UpvoteBtn count={comment.upvotes} />
+            <VoteBtn
+              count={comment.upvotes - comment.downvotes}
+              onUpvote={() => onVote(comment.commentId, 1)}
+            />
             <TouchableOpacity
               onPress={() => onReply(comment.author)}
               style={hl.actionBtn}
@@ -549,7 +608,7 @@ function HighlightedCommentCard({ comment, label, labelColor, onReply, onAvatarP
 
       {/* Nested replies */}
       {expanded && comment.replies.map((r, i) => (
-        <NestedReply key={r.id} reply={r} isLast={i === comment.replies.length - 1} onAvatarPress={onAvatarPress} />
+        <NestedReply key={r.id} reply={r} isLast={i === comment.replies.length - 1} onAvatarPress={onAvatarPress} onVote={onVote} />
       ))}
     </View>
   );
@@ -594,7 +653,12 @@ const hl = StyleSheet.create({
 });
 
 // ─── NestedReply ──────────────────────────────────────────────────────────────
-function NestedReply({ reply, isLast, onAvatarPress }: { reply: Reply; isLast: boolean; onAvatarPress: (handle: string) => void }) {
+function NestedReply({ reply, isLast, onAvatarPress, onVote }: {
+  reply: LocalReply;
+  isLast: boolean;
+  onAvatarPress: (handle: string) => void;
+  onVote: (commentId: string, value: number) => void;
+}) {
   return (
     <View style={nr.wrap}>
       {/* Thread connector */}
@@ -619,7 +683,11 @@ function NestedReply({ reply, isLast, onAvatarPress }: { reply: Reply; isLast: b
         </View>
         <Text style={nr.text}>{reply.text}</Text>
         <View style={nr.actions}>
-          <UpvoteBtn count={reply.upvotes} size="sm" />
+          <VoteBtn
+            count={reply.upvotes - reply.downvotes}
+            size="sm"
+            onUpvote={() => onVote(reply.commentId, 1)}
+          />
           <TouchableOpacity style={nr.actionBtn}>
             <Ionicons name="return-down-forward-outline" size={12} color={T.textMuted} />
             <Text style={nr.actionText}>Reply</Text>
@@ -678,7 +746,12 @@ const nr = StyleSheet.create({
 });
 
 // ─── CommentCard ──────────────────────────────────────────────────────────────
-function CommentCard({ comment, onReply, onAvatarPress }: { comment: Comment; onReply: (author: string) => void; onAvatarPress: (handle: string) => void }) {
+function CommentCard({ comment, onReply, onAvatarPress, onVote }: {
+  comment: LocalComment;
+  onReply: (author: string) => void;
+  onAvatarPress: (handle: string) => void;
+  onVote: (commentId: string, value: number) => void;
+}) {
   const [expanded, setExpanded] = useState(comment.replies.length > 0);
 
   return (
@@ -700,7 +773,10 @@ function CommentCard({ comment, onReply, onAvatarPress }: { comment: Comment; on
 
         {/* Actions */}
         <View style={cc.actions}>
-          <UpvoteBtn count={comment.upvotes} />
+          <VoteBtn
+            count={comment.upvotes - comment.downvotes}
+            onUpvote={() => onVote(comment.commentId, 1)}
+          />
           <TouchableOpacity
             onPress={() => onReply(comment.author)}
             style={cc.actionBtn}
@@ -728,7 +804,7 @@ function CommentCard({ comment, onReply, onAvatarPress }: { comment: Comment; on
 
       {/* Nested replies */}
       {expanded && comment.replies.map((r, i) => (
-        <NestedReply key={r.id} reply={r} isLast={i === comment.replies.length - 1} onAvatarPress={onAvatarPress} />
+        <NestedReply key={r.id} reply={r} isLast={i === comment.replies.length - 1} onAvatarPress={onAvatarPress} onVote={onVote} />
       ))}
     </View>
   );
@@ -757,12 +833,29 @@ const cc = StyleSheet.create({
 });
 
 // ─── ReplyComposer ────────────────────────────────────────────────────────────
-function ReplyComposer({ replyingTo, onClear, onSend }: { replyingTo: string | null; onClear: () => void; onSend?: () => void }) {
+function ReplyComposer({
+  replyingTo,
+  onClear,
+  onSend,
+  isSending,
+}: {
+  replyingTo: string | null;
+  onClear: () => void;
+  onSend: (text: string) => void;
+  isSending?: boolean;
+}) {
   const [text, setText] = useState('');
   const [isAnonymous, setIsAnonymous] = useState(true);
 
   const accent = isAnonymous ? T.accentBlue : PUB[1];
   const gradColors = isAnonymous ? CTA : PUB;
+
+  const handleSend = () => {
+    if (text.trim() && !isSending) {
+      onSend(text.trim());
+      setText('');
+    }
+  };
 
   return (
     <View style={rp.wrapper}>
@@ -860,9 +953,9 @@ function ReplyComposer({ replyingTo, onClear, onSend }: { replyingTo: string | n
 
           {/* Send button */}
           <TouchableOpacity
-            activeOpacity={text.trim() ? 0.8 : 1}
-            style={[rp.sendOuter, !text.trim() && { opacity: 0.35 }]}
-            onPress={() => { if (text.trim()) { setText(''); onClear(); onSend?.(); } }}
+            activeOpacity={text.trim() && !isSending ? 0.8 : 1}
+            style={[rp.sendOuter, (!text.trim() || isSending) && { opacity: 0.35 }]}
+            onPress={handleSend}
           >
             <LinearGradient
               colors={gradColors}
@@ -870,7 +963,11 @@ function ReplyComposer({ replyingTo, onClear, onSend }: { replyingTo: string | n
               end={{ x: 1, y: 1 }}
               style={rp.sendBtn}
             >
-              <Ionicons name="send" size={15} color={T.white} />
+              {isSending ? (
+                <ActivityIndicator size="small" color={T.white} />
+              ) : (
+                <Ionicons name="send" size={15} color={T.white} />
+              )}
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -983,31 +1080,88 @@ export default function PostDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyParentId, setReplyParentId] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<SortOption>('top');
   const [anonToast, setAnonToast] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState(false);
 
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 500);
-    return () => clearTimeout(t);
-  }, []);
+  // ─── API hooks ──────────────────────────────────────────────────────────────
+  const { data: post, isLoading: postLoading, isError: postError } = usePost(id ?? '');
+  const { data: apiComments, isLoading: commentsLoading } = useComments(id ?? '');
+  const voteMutation = useVote();
+  const createCommentMutation = useCreateComment(id ?? '');
 
-  const post = POST_MAP[id ?? ''];
+  const loading = postLoading;
 
+  // ─── Transform API post into hero card shape ───────────────────────────────
+  const heroPost: PostHeroData | null = post
+    ? {
+        category: post.category,
+        categoryIcon: CATEGORY_ICON_MAP[post.category] ?? 'chatbubbles-outline',
+        categoryColor: CATEGORY_COLOR_MAP[post.category] ?? '#5F6472',
+        board: post.community
+          ? `${post.category} · ${post.community.name}`
+          : post.category,
+        title: post.title,
+        body: post.body,
+        author: post.author.handle,
+        authorId: post.author.id,
+        timestamp: dayjs(post.createdAt).fromNow(),
+        upvotes: post.upvotes,
+        downvotes: post.downvotes,
+        commentCount: post.commentCount,
+        userVote: post.userVote,
+        postId: post.id,
+      }
+    : null;
+
+  // ─── Transform API comments into local shape ──────────────────────────────
+  const localComments: LocalComment[] = apiComments
+    ? toLocalComments(apiComments, post?.author.id)
+    : [];
+
+  // Find highlighted comments
+  const hotComment = localComments.find(c => c.isHot);
+  const helpfulComment = localComments.find(c => c.isHelpful);
+  const regularComments = localComments.filter(c => !c.isHot && !c.isHelpful);
+
+  // ─── Handlers ────────────────────────────────────────────────────────────────
   const handleAvatarPress = useCallback((handle: string) => {
-    if (post && handle === post.author) {
+    if (post && handle === post.author.handle) {
       setAnonToast(pickQuip());
     } else {
       router.push(`/profile/${handle}` as any);
     }
   }, [post]);
 
-  // Find highlighted comments
-  const hotComment = COMMENTS.find(c => c.isHot);
-  const helpfulComment = COMMENTS.find(c => c.isHelpful);
-  const regularComments = COMMENTS.filter(c => !c.isHot && !c.isHelpful);
+  const handlePostVote = useCallback((value: number) => {
+    if (!id) return;
+    voteMutation.mutate({ value, postId: id });
+  }, [id, voteMutation]);
 
+  const handleCommentVote = useCallback((commentId: string, value: number) => {
+    voteMutation.mutate({ value, commentId });
+  }, [voteMutation]);
+
+  const handleReply = useCallback((author: string, parentCommentId?: string) => {
+    setReplyingTo(author);
+    setReplyParentId(parentCommentId ?? null);
+  }, []);
+
+  const handleSendComment = useCallback((body: string) => {
+    createCommentMutation.mutate(
+      { body, parentId: replyParentId ?? undefined },
+      {
+        onSuccess: () => {
+          setReplyingTo(null);
+          setReplyParentId(null);
+          setSuccessToast(true);
+        },
+      },
+    );
+  }, [createCommentMutation, replyParentId]);
+
+  // ─── Loading state ───────────────────────────────────────────────────────────
   if (loading) {
     return (
       <LinearGradient colors={BG} style={{ flex: 1 }}>
@@ -1024,7 +1178,8 @@ export default function PostDetailScreen() {
     );
   }
 
-  if (!post) {
+  // ─── Error / not found state ────────────────────────────────────────────────
+  if (postError || !post || !heroPost) {
     return (
       <LinearGradient colors={BG} style={{ flex: 1 }}>
         <SafeAreaView style={{ flex: 1 }} edges={['top']}>
@@ -1082,13 +1237,20 @@ export default function PostDetailScreen() {
             keyboardShouldPersistTaps="handled"
           >
             {/* Original post hero */}
-            <PostHeroCard post={post} onAvatarPress={handleAvatarPress} />
+            <PostHeroCard post={heroPost} onAvatarPress={handleAvatarPress} onVote={handlePostVote} />
 
             {/* Engagement context */}
-            <EngagementStrip post={post} />
+            <EngagementStrip commentCount={post.commentCount} />
 
             {/* Sort controls */}
-            <SortPills active={sortBy} onSelect={setSortBy} post={post} />
+            <SortPills active={sortBy} onSelect={setSortBy} commentCount={post.commentCount} />
+
+            {/* Comments loading state */}
+            {commentsLoading && (
+              <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+                <ActivityIndicator size="small" color={T.accentPurple} />
+              </View>
+            )}
 
             {/* Highlighted: Top reply */}
             {hotComment && (
@@ -1096,8 +1258,9 @@ export default function PostDetailScreen() {
                 comment={hotComment}
                 label="TOP REPLY"
                 labelColor={T.accentPurple}
-                onReply={setReplyingTo}
+                onReply={(author) => handleReply(author, hotComment.commentId)}
                 onAvatarPress={handleAvatarPress}
+                onVote={handleCommentVote}
               />
             )}
 
@@ -1107,21 +1270,43 @@ export default function PostDetailScreen() {
                 comment={helpfulComment}
                 label="HELPFUL"
                 labelColor={T.green}
-                onReply={setReplyingTo}
+                onReply={(author) => handleReply(author, helpfulComment.commentId)}
                 onAvatarPress={handleAvatarPress}
+                onVote={handleCommentVote}
               />
             )}
 
             {/* Regular comments */}
             {regularComments.map(comment => (
-              <CommentCard key={comment.id} comment={comment} onReply={setReplyingTo} onAvatarPress={handleAvatarPress} />
+              <CommentCard
+                key={comment.id}
+                comment={comment}
+                onReply={(author) => handleReply(author, comment.commentId)}
+                onAvatarPress={handleAvatarPress}
+                onVote={handleCommentVote}
+              />
             ))}
+
+            {/* Empty comments state */}
+            {!commentsLoading && localComments.length === 0 && (
+              <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+                <Ionicons name="chatbubbles-outline" size={32} color={T.textMuted} />
+                <Text style={{ fontSize: 14, color: T.textMuted, marginTop: 8, fontWeight: '600' }}>
+                  No comments yet — be the first!
+                </Text>
+              </View>
+            )}
 
             <View style={{ height: 8 }} />
           </ScrollView>
 
           {/* ── Reply Composer ── */}
-          <ReplyComposer replyingTo={replyingTo} onClear={() => setReplyingTo(null)} onSend={() => setSuccessToast(true)} />
+          <ReplyComposer
+            replyingTo={replyingTo}
+            onClear={() => { setReplyingTo(null); setReplyParentId(null); }}
+            onSend={handleSendComment}
+            isSending={createCommentMutation.isPending}
+          />
         </KeyboardAvoidingView>
       </SafeAreaView>
       <SuccessToast message="Reply posted" visible={successToast} onDone={() => setSuccessToast(false)} />

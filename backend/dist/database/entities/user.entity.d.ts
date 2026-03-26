@@ -49,6 +49,11 @@ export declare class User {
     notifications: Notification[];
     reports: Report[];
     moderationActions: ModerationAction[];
+    bio: string;
+    avatarUrl: string;
+    year: string;
+    interests: string[];
+    pushToken: string;
     lastSeenAt: Date;
     createdAt: Date;
     updatedAt: Date;
