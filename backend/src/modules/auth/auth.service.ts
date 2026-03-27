@@ -13,6 +13,7 @@ import { University } from '../../database/entities/university.entity';
 import {
   RegisterDto, LoginDto, RefreshTokenDto,
   VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto,
+  SendVerificationCodeDto, VerifyCodeDto,
 } from './dto/register.dto';
 import { EmailService } from '../notifications/email.service';
 
@@ -27,6 +28,77 @@ export class AuthService {
     private config: ConfigService,
     private emailService: EmailService,
   ) {}
+
+  // ─── In-memory verification code store (use Redis in production) ────
+  private verificationCodes = new Map<string, { code: string; expiresAt: number; universityId: string }>();
+
+  /**
+   * Step 1: Validate email domain against all universities and send a 6-digit code.
+   */
+  async sendVerificationCode(dto: SendVerificationCodeDto) {
+    const email = dto.email.toLowerCase().trim();
+    const domain = email.split('@')[1];
+    if (!domain) throw new BadRequestException('Invalid email');
+
+    // Check if email domain matches any active university
+    const university = await this.universityRepo.findOne({
+      where: { emailDomain: domain, isActive: true },
+    });
+    if (!university) {
+      throw new BadRequestException(
+        'This email domain is not associated with any supported university. Please use your official university email.',
+      );
+    }
+
+    // Check if email is already registered
+    const existing = await this.userRepo.findOne({ where: { email } });
+    if (existing) throw new ConflictException('This email is already registered. Try signing in.');
+
+    // Generate 6-digit code
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+    this.verificationCodes.set(email, { code, expiresAt, universityId: university.id });
+
+    // Send code via email
+    this.emailService.sendVerificationCode(email, code)
+      .catch((err) => this.logger.error('Failed to send verification code', err));
+
+    return {
+      message: 'Verification code sent to your email',
+      universityId: university.id,
+      universityName: university.name,
+    };
+  }
+
+  /**
+   * Step 2: Verify the 6-digit code.
+   */
+  async verifyCode(dto: VerifyCodeDto) {
+    const email = dto.email.toLowerCase().trim();
+    const stored = this.verificationCodes.get(email);
+
+    if (!stored) {
+      throw new BadRequestException('No verification code found. Please request a new one.');
+    }
+
+    if (Date.now() > stored.expiresAt) {
+      this.verificationCodes.delete(email);
+      throw new BadRequestException('Verification code expired. Please request a new one.');
+    }
+
+    if (stored.code !== dto.code.trim()) {
+      throw new BadRequestException('Incorrect verification code');
+    }
+
+    // Mark as verified (keep in map so register can check)
+    this.verificationCodes.set(email, { ...stored, code: '__VERIFIED__' });
+
+    return {
+      message: 'Email verified successfully',
+      universityId: stored.universityId,
+    };
+  }
 
   async register(dto: RegisterDto) {
     const university = await this.universityRepo.findOne({

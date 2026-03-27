@@ -1,5 +1,5 @@
 import { AuthService } from './auth.service';
-import { RegisterDto, LoginDto, RefreshTokenDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto } from './dto/register.dto';
+import { RegisterDto, LoginDto, RefreshTokenDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto, SendVerificationCodeDto, VerifyCodeDto } from './dto/register.dto';
 import { User } from '../../database/entities/user.entity';
 export declare class AuthController {
     private readonly authService;
@@ -9,6 +9,15 @@ export declare class AuthController {
     }>;
     verifyEmail(dto: VerifyEmailDto): Promise<{
         message: string;
+    }>;
+    sendVerificationCode(dto: SendVerificationCodeDto): Promise<{
+        message: string;
+        universityId: string;
+        universityName: string;
+    }>;
+    verifyCode(dto: VerifyCodeDto): Promise<{
+        message: string;
+        universityId: string;
     }>;
     login(dto: LoginDto): Promise<{
         accessToken: string;

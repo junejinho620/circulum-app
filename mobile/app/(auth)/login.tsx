@@ -16,8 +16,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
+import * as SecureStore from 'expo-secure-store';
 import { Typography, Spacing, Radius } from '../../src/theme';
 import { useAuthStore } from '../../src/store/auth.store';
+
+const REMEMBERED_EMAIL_KEY = 'circulum_remembered_email';
 
 const C = {
   textPrimary:   '#111111',
@@ -100,12 +103,23 @@ export default function LoginScreen() {
   const { login } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
   const scaleAnim = useRef(new Animated.Value(0.97)).current;
+
+  // Load remembered email on mount
+  useEffect(() => {
+    SecureStore.getItemAsync(REMEMBERED_EMAIL_KEY).then((saved) => {
+      if (saved) {
+        setEmail(saved);
+        setRememberMe(true);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     Animated.parallel([
@@ -124,6 +138,14 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await login(email.trim(), password);
+
+      // Save or clear remembered email
+      if (rememberMe) {
+        await SecureStore.setItemAsync(REMEMBERED_EMAIL_KEY, email.trim());
+      } else {
+        await SecureStore.deleteItemAsync(REMEMBERED_EMAIL_KEY);
+      }
+
       router.replace('/(tabs)/feed');
     } catch (err: any) {
       const msg = err?.message || 'Login failed';
@@ -195,12 +217,23 @@ export default function LoginScreen() {
                 error={errors.password}
               />
 
-              <TouchableOpacity
-                onPress={() => router.push('/(auth)/forgot-password')}
-                style={{ alignSelf: 'flex-end' }}
-              >
-                <Text style={styles.forgotText}>Forgot password?</Text>
-              </TouchableOpacity>
+              <View style={styles.optionsRow}>
+                <TouchableOpacity
+                  onPress={() => setRememberMe(!rememberMe)}
+                  activeOpacity={0.7}
+                  style={styles.rememberRow}
+                >
+                  <View style={[styles.checkbox, rememberMe && styles.checkboxActive]}>
+                    {rememberMe && <Ionicons name="checkmark" size={12} color="#fff" />}
+                  </View>
+                  <Text style={styles.rememberText}>Remember me</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => router.push('/(auth)/forgot-password')}
+                >
+                  <Text style={styles.forgotText}>Forgot password?</Text>
+                </TouchableOpacity>
+              </View>
 
               <TouchableOpacity
                 onPress={handleLogin}
@@ -343,6 +376,35 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 32,
     elevation: 10,
+  },
+  optionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  rememberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: 'rgba(75,80,248,0.25)',
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxActive: {
+    backgroundColor: C.accentPurple,
+    borderColor: C.accentPurple,
+  },
+  rememberText: {
+    fontSize: Typography.sm,
+    color: C.textMid,
+    fontWeight: '500',
   },
   forgotText: {
     fontSize: Typography.sm,

@@ -102,6 +102,29 @@ let EmailService = EmailService_1 = class EmailService {
       `,
         });
     }
+    async sendVerificationCode(to, code) {
+        const fromName = this.config.get('email.fromName');
+        const from = this.config.get('email.from');
+        await this.transporter.sendMail({
+            from: `"${fromName}" <${from}>`,
+            to,
+            subject: `${code} is your Circulum verification code`,
+            html: `
+        <div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px;">
+          <h1 style="font-size: 24px; color: #111;">Your verification code</h1>
+          <p style="color: #555; line-height: 1.6;">
+            Enter this code in the Circulum app to verify your email:
+          </p>
+          <div style="margin: 24px 0; padding: 20px; background: #f4f4f8; border-radius: 12px; text-align: center;">
+            <span style="font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #4B50F8;">${code}</span>
+          </div>
+          <p style="color: #888; font-size: 13px;">
+            This code expires in 10 minutes. If you didn't request this, ignore this email.
+          </p>
+        </div>
+      `,
+        });
+    }
 };
 exports.EmailService = EmailService;
 exports.EmailService = EmailService = EmailService_1 = __decorate([

@@ -227,6 +227,13 @@ export const useCommunities = (type?: string) =>
     queryFn: () => api.get<Community[]>(`/communities${type ? `?type=${type}` : ''}`),
   });
 
+export const useCommunityDetail = (communityId: string) =>
+  useQuery({
+    queryKey: ['community', communityId],
+    queryFn: () => api.get<Community>(`/communities/${communityId}`),
+    enabled: !!communityId,
+  });
+
 export const useMyCommunities = () =>
   useQuery({ queryKey: ['communities', 'my'], queryFn: () => api.get<any[]>('/communities/my') });
 
@@ -629,6 +636,22 @@ export const useReport = () =>
   });
 
 // ─── Auth (non-session) ─────────────────────────────────────────────────────
+
+export const useSendVerificationCode = () =>
+  useMutation({
+    mutationFn: (email: string) =>
+      api.post<{ message: string; universityId: string; universityName: string }>(
+        '/auth/send-code', { email },
+      ),
+  });
+
+export const useVerifyCode = () =>
+  useMutation({
+    mutationFn: (data: { email: string; code: string }) =>
+      api.post<{ message: string; universityId: string }>(
+        '/auth/verify-code', data,
+      ),
+  });
 
 export const useForgotPassword = () =>
   useMutation({

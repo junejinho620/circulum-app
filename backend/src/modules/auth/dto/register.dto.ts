@@ -31,6 +31,19 @@ export class VerifyEmailDto {
   token: string;
 }
 
+export class SendVerificationCodeDto {
+  @IsEmail()
+  email: string;
+}
+
+export class VerifyCodeDto {
+  @IsEmail()
+  email: string;
+
+  @IsString()
+  code: string;
+}
+
 export class LoginDto {
   @IsEmail()
   email: string;

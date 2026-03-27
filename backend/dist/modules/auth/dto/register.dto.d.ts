@@ -7,6 +7,13 @@ export declare class RegisterDto {
 export declare class VerifyEmailDto {
     token: string;
 }
+export declare class SendVerificationCodeDto {
+    email: string;
+}
+export declare class VerifyCodeDto {
+    email: string;
+    code: string;
+}
 export declare class LoginDto {
     email: string;
     password: string;

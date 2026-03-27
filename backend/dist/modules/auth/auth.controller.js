@@ -31,6 +31,12 @@ let AuthController = class AuthController {
     verifyEmail(dto) {
         return this.authService.verifyEmail(dto);
     }
+    sendVerificationCode(dto) {
+        return this.authService.sendVerificationCode(dto);
+    }
+    verifyCode(dto) {
+        return this.authService.verifyCode(dto);
+    }
     login(dto) {
         return this.authService.login(dto);
     }
@@ -80,6 +86,26 @@ __decorate([
     __metadata("design:paramtypes", [register_dto_1.VerifyEmailDto]),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "verifyEmail", null);
+__decorate([
+    (0, public_decorator_1.Public)(),
+    (0, common_1.UseGuards)(throttler_1.ThrottlerGuard),
+    (0, common_1.Post)('send-code'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [register_dto_1.SendVerificationCodeDto]),
+    __metadata("design:returntype", void 0)
+], AuthController.prototype, "sendVerificationCode", null);
+__decorate([
+    (0, public_decorator_1.Public)(),
+    (0, common_1.UseGuards)(throttler_1.ThrottlerGuard),
+    (0, common_1.Post)('verify-code'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [register_dto_1.VerifyCodeDto]),
+    __metadata("design:returntype", void 0)
+], AuthController.prototype, "verifyCode", null);
 __decorate([
     (0, public_decorator_1.Public)(),
     (0, common_1.UseGuards)(throttler_1.ThrottlerGuard),

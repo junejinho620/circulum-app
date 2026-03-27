@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { User } from '../../database/entities/user.entity';
 import { University } from '../../database/entities/university.entity';
-import { RegisterDto, LoginDto, RefreshTokenDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto } from './dto/register.dto';
+import { RegisterDto, LoginDto, RefreshTokenDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto, SendVerificationCodeDto, VerifyCodeDto } from './dto/register.dto';
 import { EmailService } from '../notifications/email.service';
 export declare class AuthService {
     private userRepo;
@@ -13,6 +13,16 @@ export declare class AuthService {
     private emailService;
     private readonly logger;
     constructor(userRepo: Repository<User>, universityRepo: Repository<University>, jwtService: JwtService, config: ConfigService, emailService: EmailService);
+    private verificationCodes;
+    sendVerificationCode(dto: SendVerificationCodeDto): Promise<{
+        message: string;
+        universityId: string;
+        universityName: string;
+    }>;
+    verifyCode(dto: VerifyCodeDto): Promise<{
+        message: string;
+        universityId: string;
+    }>;
     register(dto: RegisterDto): Promise<{
         message: string;
     }>;

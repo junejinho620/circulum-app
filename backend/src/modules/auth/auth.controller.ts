@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import {
   RegisterDto, LoginDto, RefreshTokenDto,
   VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto,
+  SendVerificationCodeDto, VerifyCodeDto,
 } from './dto/register.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -27,6 +28,22 @@ export class AuthController {
   @Post('verify-email')
   verifyEmail(@Body() dto: VerifyEmailDto) {
     return this.authService.verifyEmail(dto);
+  }
+
+  @Public()
+  @UseGuards(ThrottlerGuard)
+  @Post('send-code')
+  @HttpCode(HttpStatus.OK)
+  sendVerificationCode(@Body() dto: SendVerificationCodeDto) {
+    return this.authService.sendVerificationCode(dto);
+  }
+
+  @Public()
+  @UseGuards(ThrottlerGuard)
+  @Post('verify-code')
+  @HttpCode(HttpStatus.OK)
+  verifyCode(@Body() dto: VerifyCodeDto) {
+    return this.authService.verifyCode(dto);
   }
 
   @Public()

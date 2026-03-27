@@ -544,7 +544,7 @@ export default function ExploreScreen() {
                       key={c.id}
                       community={c}
                       index={idx}
-                      onPress={() => router.push(`/board/${c.id}` as any)}
+                      onPress={() => router.push(`/community/${c.id}` as any)}
                     />
                   ))
                 ) : (

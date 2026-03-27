@@ -7,4 +7,5 @@ export declare class EmailService {
     sendVerificationEmail(to: string, handle: string, token: string): Promise<void>;
     sendPasswordResetEmail(to: string, token: string): Promise<void>;
     sendModerationEmail(to: string, handle: string, action: string, reason: string): Promise<void>;
+    sendVerificationCode(to: string, code: string): Promise<void>;
 }

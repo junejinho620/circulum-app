@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Typography, Spacing, Radius } from '../../src/theme';
-import { useUniversities } from '../../src/services/queries';
+import { useUniversities, useSendVerificationCode, useVerifyCode } from '../../src/services/queries';
 import { useAuthStore } from '../../src/store/auth.store';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -398,6 +398,8 @@ export default function RegisterScreen() {
   const insets   = useSafeAreaInsets();
   const { register, login } = useAuthStore();
   const { data: universities } = useUniversities();
+  const sendCode = useSendVerificationCode();
+  const verifyCode = useVerifyCode();
 
   const [step, setStep]             = useState<Step>('email');
   const [loading, setLoading]       = useState(false);
@@ -465,29 +467,52 @@ export default function RegisterScreen() {
     return '';
   };
 
-  const handleEmailContinue = () => {
+  const handleEmailContinue = async () => {
     const emailErr = validateEmail();
     const passErr = validatePassword();
     if (emailErr || passErr) {
       setErrors({ email: emailErr, password: passErr });
       return;
     }
-    // Auto-detect university from email domain
-    const domain = form.email.trim().split('@')[1] ?? '';
-    const matched = universities?.find((u: any) => u.emailDomain === domain);
-    if (matched) {
-      setForm((p) => ({ ...p, universityId: matched.id, universityName: matched.name, universityDomain: matched.emailDomain }));
+
+    setLoading(true);
+    try {
+      // Send verification code — backend validates domain against all universities
+      const result = await sendCode.mutateAsync(form.email.trim());
+      setForm((p) => ({
+        ...p,
+        universityId: result.universityId,
+        universityName: result.universityName,
+      }));
+      setStep('code');
+    } catch (err: any) {
+      const msg = err?.message || 'Could not send verification code';
+      setErrors({ email: msg });
+    } finally {
+      setLoading(false);
     }
-    setStep('code');
   };
 
-  const handleCodeVerify = () => {
+  const handleCodeVerify = async () => {
     if (codeDigits.some((d) => !d)) {
       setErrors({ code: 'Enter the full code' });
       return;
     }
-    setErrors({});
-    setStep('identity');
+
+    setLoading(true);
+    try {
+      await verifyCode.mutateAsync({
+        email: form.email.trim(),
+        code: codeDigits.join(''),
+      });
+      setErrors({});
+      setStep('identity');
+    } catch (err: any) {
+      const msg = err?.message || 'Invalid code';
+      setErrors({ code: msg });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleIdentityContinue = () => {
@@ -595,7 +620,7 @@ export default function RegisterScreen() {
                         hint="Min 8 characters"
                       />
                     </View>
-                    <GradientButton label="Continue" onPress={handleEmailContinue} />
+                    <GradientButton label={loading ? 'Sending code...' : 'Continue'} onPress={handleEmailContinue} loading={loading} />
                   </BlurView>
 
                   <TouchableOpacity onPress={() => router.replace('/(auth)/login')} style={s.signInRow}>
@@ -617,12 +642,22 @@ export default function RegisterScreen() {
                     </Text>
                     <OtpInput digits={codeDigits} onChange={(d) => { setCodeDigits(d); setErrors((p) => ({ ...p, code: '' })); }} />
                     {!!errors.code && <Text style={{ fontSize: Typography.sm, color: T.error, textAlign: 'center' }}>{errors.code}</Text>}
-                    <TouchableOpacity style={s.resendRow}>
+                    <TouchableOpacity
+                      style={s.resendRow}
+                      onPress={async () => {
+                        try {
+                          await sendCode.mutateAsync(form.email.trim());
+                          Alert.alert('Code Resent', 'A new verification code has been sent to your email.');
+                        } catch (err: any) {
+                          Alert.alert('Error', err?.message || 'Could not resend code');
+                        }
+                      }}
+                    >
                       <Text style={s.helperText}>
                         Didn't receive a code?{'  '}<Text style={s.resendLink}>Resend</Text>
                       </Text>
                     </TouchableOpacity>
-                    <GradientButton label="Verify" onPress={handleCodeVerify} />
+                    <GradientButton label={loading ? 'Verifying...' : 'Verify'} onPress={handleCodeVerify} loading={loading} />
                   </BlurView>
                 </View>
               )}

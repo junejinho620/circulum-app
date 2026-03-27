@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ResetPasswordDto = exports.ForgotPasswordDto = exports.RefreshTokenDto = exports.LoginDto = exports.VerifyEmailDto = exports.RegisterDto = void 0;
+exports.ResetPasswordDto = exports.ForgotPasswordDto = exports.RefreshTokenDto = exports.LoginDto = exports.VerifyCodeDto = exports.SendVerificationCodeDto = exports.VerifyEmailDto = exports.RegisterDto = void 0;
 const class_validator_1 = require("class-validator");
 class RegisterDto {
 }
@@ -47,6 +47,24 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], VerifyEmailDto.prototype, "token", void 0);
+class SendVerificationCodeDto {
+}
+exports.SendVerificationCodeDto = SendVerificationCodeDto;
+__decorate([
+    (0, class_validator_1.IsEmail)(),
+    __metadata("design:type", String)
+], SendVerificationCodeDto.prototype, "email", void 0);
+class VerifyCodeDto {
+}
+exports.VerifyCodeDto = VerifyCodeDto;
+__decorate([
+    (0, class_validator_1.IsEmail)(),
+    __metadata("design:type", String)
+], VerifyCodeDto.prototype, "email", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], VerifyCodeDto.prototype, "code", void 0);
 class LoginDto {
 }
 exports.LoginDto = LoginDto;

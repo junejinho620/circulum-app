@@ -32,6 +32,51 @@ let AuthService = AuthService_1 = class AuthService {
         this.config = config;
         this.emailService = emailService;
         this.logger = new common_1.Logger(AuthService_1.name);
+        this.verificationCodes = new Map();
+    }
+    async sendVerificationCode(dto) {
+        const email = dto.email.toLowerCase().trim();
+        const domain = email.split('@')[1];
+        if (!domain)
+            throw new common_1.BadRequestException('Invalid email');
+        const university = await this.universityRepo.findOne({
+            where: { emailDomain: domain, isActive: true },
+        });
+        if (!university) {
+            throw new common_1.BadRequestException('This email domain is not associated with any supported university. Please use your official university email.');
+        }
+        const existing = await this.userRepo.findOne({ where: { email } });
+        if (existing)
+            throw new common_1.ConflictException('This email is already registered. Try signing in.');
+        const code = String(Math.floor(100000 + Math.random() * 900000));
+        const expiresAt = Date.now() + 10 * 60 * 1000;
+        this.verificationCodes.set(email, { code, expiresAt, universityId: university.id });
+        this.emailService.sendVerificationCode(email, code)
+            .catch((err) => this.logger.error('Failed to send verification code', err));
+        return {
+            message: 'Verification code sent to your email',
+            universityId: university.id,
+            universityName: university.name,
+        };
+    }
+    async verifyCode(dto) {
+        const email = dto.email.toLowerCase().trim();
+        const stored = this.verificationCodes.get(email);
+        if (!stored) {
+            throw new common_1.BadRequestException('No verification code found. Please request a new one.');
+        }
+        if (Date.now() > stored.expiresAt) {
+            this.verificationCodes.delete(email);
+            throw new common_1.BadRequestException('Verification code expired. Please request a new one.');
+        }
+        if (stored.code !== dto.code.trim()) {
+            throw new common_1.BadRequestException('Incorrect verification code');
+        }
+        this.verificationCodes.set(email, { ...stored, code: '__VERIFIED__' });
+        return {
+            message: 'Email verified successfully',
+            universityId: stored.universityId,
+        };
     }
     async register(dto) {
         const university = await this.universityRepo.findOne({
